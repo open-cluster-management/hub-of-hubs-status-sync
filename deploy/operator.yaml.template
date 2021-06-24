@@ -1,0 +1,165 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${COMPONENT}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: ${COMPONENT}
+  template:
+    metadata:
+      labels:
+	name: ${COMPONENT}
+    spec:
+      serviceAccountName: ${COMPONENT}
+      containers:
+	- name: ${COMPONENT}
+	  image: ${REGISTRY}/${COMPONENT}:${IMAGE_TAG}
+	  command:
+	  - ${COMPONENT}
+	  imagePullPolicy: Always
+	  env:
+	    - name: WATCH_NAMESPACE
+	    - name: DATABASE_URL
+	      valueFrom:
+		secretKeyRef:
+		  name: hub-of-hubs-database-secret
+		  key: url
+	    - name: POD_NAME
+	      valueFrom:
+		fieldRef:
+		  fieldPath: metadata.name
+	    - name: OPERATOR_NAME
+	      value: ${COMPONENT}
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: ${COMPONENT}
+subjects:
+- kind: ServiceAccount
+  name: ${COMPONENT}
+  namespace: open-cluster-management
+roleRef:
+  kind: ClusterRole
+  name: ${COMPONENT}
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: ${COMPONENT}
+rules:
+- apiGroups:
+  - "policy.open-cluster-management.io"
+  resources:
+  - policies
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - "policy.open-cluster-management.io"
+  resources:
+  - policies/status
+  verbs:
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: ${COMPONENT}
+subjects:
+- kind: ServiceAccount
+  name: ${COMPONENT}
+roleRef:
+  kind: Role
+  name: ${COMPONENT}
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  creationTimestamp: null
+  name: ${COMPONENT}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - services
+  - services/finalizers
+  - endpoints
+  - persistentvolumeclaims
+  - events
+  - configmaps
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  - daemonsets
+  - replicasets
+  - statefulsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - servicemonitors
+  verbs:
+  - get
+  - create
+- apiGroups:
+  - apps
+  resourceNames:
+  - ${COMPONENT}
+  resources:
+  - deployments/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+- apiGroups:
+  - apps
+  resources:
+  - replicasets
+  - deployments
+  verbs:
+  - get
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ${COMPONENT}
