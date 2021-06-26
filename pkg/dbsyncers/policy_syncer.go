@@ -21,6 +21,7 @@ type policyDBSyncer struct {
 	databaseConnectionPool *pgxpool.Pool
 	syncInterval           time.Duration
 	tableName              string
+	specTableName          string
 }
 
 func (syncer *policyDBSyncer) Start(stopChannel <-chan struct{}) error {
@@ -44,22 +45,49 @@ func (syncer *policyDBSyncer) sync() {
 	syncer.log.Info("performing sync", "table", syncer.tableName)
 
 	rows, _ := syncer.databaseConnectionPool.Query(context.Background(),
-		fmt.Sprintf(`SELECT policy_id, cluster_name, leaf_hub_name, compliance FROM status.%s`, syncer.tableName))
+		fmt.Sprintf(`SELECT id, payload -> 'metadata' ->> 'name' as name, payload -> 'metadata' ->> 'namespace'
+			    as namespace FROM spec.%s WHERE deleted = FALSE`, syncer.specTableName))
 
 	for rows.Next() {
-		var policyID, clusterName, leafHubName, compliance string
+		var id, name, namespace string
 
-		err := rows.Scan(&policyID, &clusterName, &leafHubName, &compliance)
+		err := rows.Scan(&id, &name, &namespace)
+		if err != nil {
+			syncer.log.Error(err, "error in select", "table", syncer.specTableName)
+			continue
+		}
+
+		instance := &policiesv1.Policy{}
+		err = syncer.client.Get(context.Background(), client.ObjectKey{Name: name, Namespace: namespace}, instance)
+
+		if err != nil {
+			syncer.log.Error(err, "error in getting CR", "name", name, "namespace", namespace)
+			continue
+		}
+
+		syncer.handlePolicy(instance)
+	}
+}
+
+func (syncer *policyDBSyncer) handlePolicy(instance *policiesv1.Policy) {
+	syncer.log.Info("handling a policy", "policy", instance, "uid", string(instance.GetUID()))
+
+	rows, _ := syncer.databaseConnectionPool.Query(context.Background(),
+		fmt.Sprintf(`SELECT cluster_name, leaf_hub_name, compliance
+			     FROM status.%s WHERE policy_id = '%s'`, syncer.tableName, string(instance.GetUID())))
+
+	for rows.Next() {
+		var clusterName, leafHubName, compliance string
+
+		err := rows.Scan(&clusterName, &leafHubName, &compliance)
 		if err != nil {
 			syncer.log.Error(err, "error in select", "table", syncer.tableName)
 			continue
 		}
 
-		syncer.log.Info("handling a line in compliance table", "policyID", policyID, "clusterName", clusterName,
+		syncer.log.Info("handling a line in compliance table", "clusterName", clusterName,
 			"leafHubName", leafHubName, "compliance", compliance)
 	}
-
-	_ = &policiesv1.Policy{}
 }
 
 func addPolicyDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool, syncInterval time.Duration) error {
@@ -69,5 +97,6 @@ func addPolicyDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool, s
 		databaseConnectionPool: databaseConnectionPool,
 		syncInterval:           syncInterval,
 		tableName:              "compliance",
+		specTableName:          "policies",
 	})
 }
