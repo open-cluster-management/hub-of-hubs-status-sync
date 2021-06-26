@@ -11,28 +11,34 @@ spec:
   template:
     metadata:
       labels:
-	name: ${COMPONENT}
+        name: ${COMPONENT}
     spec:
       serviceAccountName: ${COMPONENT}
       containers:
-	- name: ${COMPONENT}
-	  image: ${REGISTRY}/${COMPONENT}:${IMAGE_TAG}
-	  command:
-	  - ${COMPONENT}
-	  imagePullPolicy: Always
-	  env:
-	    - name: WATCH_NAMESPACE
-	    - name: DATABASE_URL
-	      valueFrom:
-		secretKeyRef:
-		  name: hub-of-hubs-database-secret
-		  key: url
-	    - name: POD_NAME
-	      valueFrom:
-		fieldRef:
-		  fieldPath: metadata.name
-	    - name: OPERATOR_NAME
-	      value: ${COMPONENT}
+        - name: ${COMPONENT}
+          image: ${REGISTRY}/${COMPONENT}:${IMAGE_TAG}
+          command:
+          - ${COMPONENT}
+          imagePullPolicy: Always
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                 apiVersion: v1
+                 fieldPath: metadata.namespace
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: hub-of-hubs-database-secret
+                  key: url
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OPERATOR_NAME
+              value: ${COMPONENT}
+            - name: HOH_STATUS_SYNC_INTERVAL
+              value: 5s
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -56,14 +62,11 @@ rules:
   - "policy.open-cluster-management.io"
   resources:
   - policies
+  - policies/status
   verbs:
   - get
   - list
-- apiGroups:
-  - "policy.open-cluster-management.io"
-  resources:
-  - policies/status
-  verbs:
+  - watch
   - update
 - apiGroups:
   - ""
