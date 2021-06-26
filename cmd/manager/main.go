@@ -13,7 +13,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v4/pgxpool"
-	"github.com/open-cluster-management/hub-of-hubs-spec-syncer/pkg/controller"
+	"github.com/open-cluster-management/hub-of-hubs-spec-syncer/pkg/dbsyncers"
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
@@ -107,7 +107,7 @@ func createManager(namespace, metricsHost string, metricsPort int32,
 		return nil, fmt.Errorf("failed to create a new manager: %w", err)
 	}
 
-	if err := controller.AddToScheme(mgr.GetScheme()); err != nil {
+	if err := dbsyncers.AddToScheme(mgr.GetScheme()); err != nil {
 		return nil, fmt.Errorf("failed to add schemes: %w", err)
 	}
 
