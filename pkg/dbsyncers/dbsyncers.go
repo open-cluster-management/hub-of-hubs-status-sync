@@ -5,9 +5,12 @@ package dbsyncers
 
 import (
 	"fmt"
+	"time"
 
+	"github.com/jackc/pgx/v4/pgxpool"
 	policiesv1 "github.com/open-cluster-management/governance-policy-propagator/pkg/apis/policy/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/scheme"
 )
 
@@ -18,6 +21,18 @@ func AddToScheme(s *runtime.Scheme) error {
 	for _, schemeBuilder := range schemeBuilders {
 		if err := schemeBuilder.AddToScheme(s); err != nil {
 			return fmt.Errorf("failed to add scheme: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func AddDBSyncers(mgr ctrl.Manager, dbConnectionPool *pgxpool.Pool, syncInterval time.Duration) error {
+	addDBSyncerFunctions := []func(ctrl.Manager, *pgxpool.Pool, time.Duration) error{addPolicyDBSyncer}
+
+	for _, addDBSyncerFunction := range addDBSyncerFunctions {
+		if err := addDBSyncerFunction(mgr, dbConnectionPool, syncInterval); err != nil {
+			return fmt.Errorf("failed to add DB Syncer: %w", err)
 		}
 	}
 
