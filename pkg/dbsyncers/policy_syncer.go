@@ -31,7 +31,7 @@ func (syncer *policyDBSyncer) Start(stopChannel <-chan struct{}) error {
 		case <-stopChannel:
 			ticker.Stop()
 
-			syncer.log.Info("stop performing sync for ", syncer.tableName)
+			syncer.log.Info("stop performing sync", "table", syncer.tableName)
 
 			return nil
 		case <-ticker.C:
@@ -41,21 +41,22 @@ func (syncer *policyDBSyncer) Start(stopChannel <-chan struct{}) error {
 }
 
 func (syncer *policyDBSyncer) sync() {
-	syncer.log.Info("performing sync for", syncer.tableName)
+	syncer.log.Info("performing sync", "table", syncer.tableName)
 
 	rows, _ := syncer.databaseConnectionPool.Query(context.Background(),
 		fmt.Sprintf(`SELECT policy_id, cluster_name, leaf_hub_name, compliance FROM status.%s`, syncer.tableName))
 
 	for rows.Next() {
-		var policyID, clusterName, leafHubName string
+		var policyID, clusterName, leafHubName, compliance string
 
-		err := rows.Scan(&policyID, &clusterName, &leafHubName)
+		err := rows.Scan(&policyID, &clusterName, &leafHubName, &compliance)
 		if err != nil {
-			syncer.log.Error(err, "error reading from table %s", syncer.tableName)
+			syncer.log.Error(err, "error in select", "table", syncer.tableName)
 			continue
 		}
 
-		syncer.log.Info("handling policyID", policyID)
+		syncer.log.Info("handling a line in compliance table", "policyID", policyID, "clusterName", clusterName,
+			"leafHubName", leafHubName, "compliance", compliance)
 	}
 
 	_ = &policiesv1.Policy{}
