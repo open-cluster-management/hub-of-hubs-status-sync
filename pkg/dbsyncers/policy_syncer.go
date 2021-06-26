@@ -4,6 +4,8 @@
 package dbsyncers
 
 import (
+	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -18,6 +20,7 @@ type policyDBSyncer struct {
 	log                    logr.Logger
 	databaseConnectionPool *pgxpool.Pool
 	syncInterval           time.Duration
+	tableName              string
 }
 
 func (syncer *policyDBSyncer) Start(stopChannel <-chan struct{}) error {
@@ -28,7 +31,7 @@ func (syncer *policyDBSyncer) Start(stopChannel <-chan struct{}) error {
 		case <-stopChannel:
 			ticker.Stop()
 
-			syncer.log.Info("stop performing sync for policies")
+			syncer.log.Info("stop performing sync for ", syncer.tableName)
 
 			return nil
 		case <-ticker.C:
@@ -38,9 +41,24 @@ func (syncer *policyDBSyncer) Start(stopChannel <-chan struct{}) error {
 }
 
 func (syncer *policyDBSyncer) sync() {
-	_ = &policiesv1.Policy{}
+	syncer.log.Info("performing sync for", syncer.tableName)
 
-	syncer.log.Info("performing sync for policies")
+	rows, _ := syncer.databaseConnectionPool.Query(context.Background(),
+		fmt.Sprintf(`SELECT policy_id, cluster_name, leaf_hub_name, compliance FROM status.%s`, syncer.tableName))
+
+	for rows.Next() {
+		var policyID, clusterName, leafHubName string
+
+		err := rows.Scan(&policyID, &clusterName, &leafHubName)
+		if err != nil {
+			syncer.log.Error(err, "error reading from table %s", syncer.tableName)
+			continue
+		}
+
+		syncer.log.Info("handling policyID", policyID)
+	}
+
+	_ = &policiesv1.Policy{}
 }
 
 func addPolicyDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool, syncInterval time.Duration) error {
@@ -49,5 +67,6 @@ func addPolicyDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool, s
 		log:                    ctrl.Log.WithName("policy-db-syncer"),
 		databaseConnectionPool: databaseConnectionPool,
 		syncInterval:           syncInterval,
+		tableName:              "compliance",
 	})
 }
