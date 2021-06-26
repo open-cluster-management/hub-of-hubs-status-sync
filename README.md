@@ -1,7 +1,7 @@
 [comment]: # ( Copyright Contributors to the Open Cluster Management project )
 
 # Hub-of-Hubs Status Syncer
-Red Hat Advanced Cluster Management Hub-of-Hubs Status Sync
+The status sync component of [Hub-of-Hubs](https://github.com/open-cluster-management/hub-of-hubs).
 
 ## How it works
 
