@@ -11,8 +11,14 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v4/pgxpool"
 	policiesv1 "github.com/open-cluster-management/governance-policy-propagator/pkg/apis/policy/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+const (
+	dbEnumCompliant    = "compliant"
+	dbEnumNonCompliant = "non_compliant"
 )
 
 type policyDBSyncer struct {
@@ -73,20 +79,60 @@ func (syncer *policyDBSyncer) handlePolicy(instance *policiesv1.Policy) {
 	syncer.log.Info("handling a policy", "policy", instance, "uid", string(instance.GetUID()))
 
 	rows, _ := syncer.databaseConnectionPool.Query(context.Background(),
-		fmt.Sprintf(`SELECT cluster_name, leaf_hub_name, compliance
-			     FROM status.%s WHERE policy_id = '%s'`, syncer.tableName, string(instance.GetUID())))
+		fmt.Sprintf(`SELECT cluster_name, leaf_hub_name, compliance FROM status.%s
+			     WHERE policy_id = '%s' ORDER BY leaf_hub_name, cluster_name`,
+			syncer.tableName, string(instance.GetUID())))
+
+	compliancePerClusterStatuses := []*policiesv1.CompliancePerClusterStatus{}
+	hasNonCompliantClusters := false
+	dbEnumToPolicyComplianceStateMap := map[string]policiesv1.ComplianceState{
+		dbEnumCompliant:    policiesv1.Compliant,
+		dbEnumNonCompliant: policiesv1.NonCompliant,
+	}
 
 	for rows.Next() {
-		var clusterName, leafHubName, compliance string
+		var clusterName, leafHubName, complianceInDB string
 
-		err := rows.Scan(&clusterName, &leafHubName, &compliance)
+		err := rows.Scan(&clusterName, &leafHubName, &complianceInDB)
 		if err != nil {
 			syncer.log.Error(err, "error in select", "table", syncer.tableName)
 			continue
 		}
 
 		syncer.log.Info("handling a line in compliance table", "clusterName", clusterName,
-			"leafHubName", leafHubName, "compliance", compliance)
+			"leafHubName", leafHubName, "compliance", complianceInDB)
+
+		var compliance policiesv1.ComplianceState = ""
+		if mappedCompliance, ok := dbEnumToPolicyComplianceStateMap[complianceInDB]; ok {
+			compliance = mappedCompliance
+		}
+
+		if compliance == policiesv1.NonCompliant {
+			hasNonCompliantClusters = true
+		}
+
+		compliancePerClusterStatuses = append(compliancePerClusterStatuses, &policiesv1.CompliancePerClusterStatus{
+			ComplianceState:  compliance,
+			ClusterName:      clusterName,
+			ClusterNamespace: leafHubName,
+		})
+	}
+
+	syncer.log.Info("calculated compliance", "compliancePerClusterStatuses", compliancePerClusterStatuses)
+
+	originalInstance := instance.DeepCopy()
+	instance.Status.Status = compliancePerClusterStatuses
+	instance.Status.ComplianceState = ""
+
+	if hasNonCompliantClusters {
+		instance.Status.ComplianceState = policiesv1.NonCompliant
+	} else if len(compliancePerClusterStatuses) > 0 {
+		instance.Status.ComplianceState = policiesv1.Compliant
+	}
+
+	err := syncer.client.Status().Patch(context.Background(), instance, client.MergeFrom(originalInstance))
+	if err != nil && !errors.IsNotFound(err) {
+		syncer.log.Error(err, "Failed to update policy status...")
 	}
 }
 
