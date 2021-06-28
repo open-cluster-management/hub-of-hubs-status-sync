@@ -3,6 +3,12 @@
 # Hub-of-Hubs Status Syncer
 The status sync component of [Hub-of-Hubs](https://github.com/open-cluster-management/hub-of-hubs).
 
+:exclamation: Remember to disable the governance-policy-propagator (since it is updating policy status as well)
+
+```
+kubectl scale deployment -l component=ocm-policy-propagator -n open-cluster-management --kubeconfig $TOP_HUB_CONFIG --replicas 0
+```
+
 ## How it works
 
 ## Build to run locally
