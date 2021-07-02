@@ -33,24 +33,27 @@ type policyDBSyncer struct {
 func (syncer *policyDBSyncer) Start(stopChannel <-chan struct{}) error {
 	ticker := time.NewTicker(syncer.syncInterval)
 
+	ctx, cancelContext := context.WithCancel(context.Background())
+
 	for {
 		select {
 		case <-stopChannel:
 			ticker.Stop()
 
 			syncer.log.Info("stop performing sync", "table", syncer.tableName)
+			cancelContext()
 
 			return nil
 		case <-ticker.C:
-			syncer.sync()
+			syncer.sync(ctx)
 		}
 	}
 }
 
-func (syncer *policyDBSyncer) sync() {
+func (syncer *policyDBSyncer) sync(ctx context.Context) {
 	syncer.log.Info("performing sync", "table", syncer.tableName)
 
-	rows, _ := syncer.databaseConnectionPool.Query(context.Background(),
+	rows, _ := syncer.databaseConnectionPool.Query(ctx,
 		fmt.Sprintf(`SELECT id, payload -> 'metadata' ->> 'name' as name, payload -> 'metadata' ->> 'namespace'
 			    as namespace FROM spec.%s WHERE deleted = FALSE`, syncer.specTableName))
 
@@ -71,14 +74,14 @@ func (syncer *policyDBSyncer) sync() {
 			continue
 		}
 
-		syncer.handlePolicy(instance)
+		go syncer.handlePolicy(ctx, instance)
 	}
 }
 
-func (syncer *policyDBSyncer) handlePolicy(instance *policiesv1.Policy) {
+func (syncer *policyDBSyncer) handlePolicy(ctx context.Context, instance *policiesv1.Policy) {
 	syncer.log.Info("handling a policy", "policy", instance, "uid", string(instance.GetUID()))
 
-	rows, _ := syncer.databaseConnectionPool.Query(context.Background(),
+	rows, _ := syncer.databaseConnectionPool.Query(ctx,
 		fmt.Sprintf(`SELECT cluster_name, leaf_hub_name, compliance FROM status.%s
 			     WHERE policy_id = '%s' ORDER BY leaf_hub_name, cluster_name`,
 			syncer.tableName, string(instance.GetUID())))
@@ -130,7 +133,7 @@ func (syncer *policyDBSyncer) handlePolicy(instance *policiesv1.Policy) {
 		instance.Status.ComplianceState = policiesv1.Compliant
 	}
 
-	err := syncer.client.Status().Patch(context.Background(), instance, client.MergeFrom(originalInstance))
+	err := syncer.client.Status().Patch(ctx, instance, client.MergeFrom(originalInstance))
 	if err != nil && !errors.IsNotFound(err) {
 		syncer.log.Error(err, "Failed to update policy status...")
 	}
