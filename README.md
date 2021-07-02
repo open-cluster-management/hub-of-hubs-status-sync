@@ -51,7 +51,7 @@ python -c "import sys, urllib as ul; print ul.quote_plus(sys.argv[1])" 'YourPass
 `WATCH_NAMESPACE` can be defined empty so the controller will watch all the namespaces.
 
 ```
-./bin/hub-of-hubs-spec-sync --kubeconfig $TOP_HUB_CONFIG
+./bin/hub-of-hubs-status-sync --kubeconfig $TOP_HUB_CONFIG
 ```
 
 ## Build image
