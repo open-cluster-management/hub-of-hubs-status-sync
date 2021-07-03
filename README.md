@@ -3,11 +3,13 @@
 # Hub-of-Hubs Status Syncer
 The status sync component of [Hub-of-Hubs](https://github.com/open-cluster-management/hub-of-hubs).
 
-:exclamation: Remember to disable the governance-policy-propagator (since it is updating policy status as well)
+:exclamation: Verify that [vadimeisenbergibm/governance-policy-propagator:no_status_update](https://hub.docker.com/layers/156812667/vadimeisenbergibm/governance-policy-propagator/no_status_update/images/sha256-d622f20d24f1e363ffc442f80a24eaafd2a58d953a44d8f8f798e86dbe66ead0) image is used for the governance policy propagator:
 
 ```
-kubectl scale deployment -l component=ocm-policy-propagator -n open-cluster-management --kubeconfig $TOP_HUB_CONFIG --replicas 0
+kubectl get deployment -l component=ocm-policy-propagator -n open-cluster-management --kubeconfig $TOP_HUB_CONFIG  -o jsonpath='{.items[*].spec.template.spec.containers[*].image}'
+vadimeisenbergibm/governance-policy-propagator:no_status_update
 ```
+This version of the policy propagator does not update the status of the policy, so it will not interfere with the updates from this controller.
 
 ## How it works
 
