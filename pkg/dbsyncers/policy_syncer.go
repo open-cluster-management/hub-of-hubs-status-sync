@@ -45,7 +45,7 @@ func (syncer *policyDBSyncer) Start(stopChannel <-chan struct{}) error {
 
 			return nil
 		case <-ticker.C:
-			syncer.sync(ctx)
+			go syncer.sync(ctx)
 		}
 	}
 }
