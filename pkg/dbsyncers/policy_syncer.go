@@ -53,9 +53,13 @@ func (syncer *policyDBSyncer) Start(stopChannel <-chan struct{}) error {
 func (syncer *policyDBSyncer) sync(ctx context.Context) {
 	syncer.log.Info("performing sync", "table", syncer.tableName)
 
-	rows, _ := syncer.databaseConnectionPool.Query(ctx,
+	rows, err := syncer.databaseConnectionPool.Query(ctx,
 		fmt.Sprintf(`SELECT id, payload -> 'metadata' ->> 'name' as name, payload -> 'metadata' ->> 'namespace'
 			    as namespace FROM spec.%s WHERE deleted = FALSE`, syncer.specTableName))
+	if err != nil {
+		syncer.log.Error(err, "error in getting policies spec")
+		return
+	}
 
 	for rows.Next() {
 		var id, name, namespace string
@@ -67,7 +71,7 @@ func (syncer *policyDBSyncer) sync(ctx context.Context) {
 		}
 
 		instance := &policiesv1.Policy{}
-		err = syncer.client.Get(context.Background(), client.ObjectKey{Name: name, Namespace: namespace}, instance)
+		err = syncer.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, instance)
 
 		if err != nil {
 			syncer.log.Error(err, "error in getting CR", "name", name, "namespace", namespace)
@@ -81,10 +85,13 @@ func (syncer *policyDBSyncer) sync(ctx context.Context) {
 func (syncer *policyDBSyncer) handlePolicy(ctx context.Context, instance *policiesv1.Policy) {
 	syncer.log.Info("handling a policy", "policy", instance, "uid", string(instance.GetUID()))
 
-	rows, _ := syncer.databaseConnectionPool.Query(ctx,
+	rows, err := syncer.databaseConnectionPool.Query(ctx,
 		fmt.Sprintf(`SELECT cluster_name, leaf_hub_name, compliance FROM status.%s
 			     WHERE policy_id = '%s' ORDER BY leaf_hub_name, cluster_name`,
 			syncer.tableName, string(instance.GetUID())))
+	if err != nil {
+		syncer.log.Error(err, "error in getting policy statuses from DB")
+	}
 
 	compliancePerClusterStatuses := []*policiesv1.CompliancePerClusterStatus{}
 	hasNonCompliantClusters := false
@@ -121,9 +128,16 @@ func (syncer *policyDBSyncer) handlePolicy(ctx context.Context, instance *polici
 		})
 	}
 
-	syncer.log.Info("calculated compliance", "compliancePerClusterStatuses", compliancePerClusterStatuses)
+	syncer.log.Info("calculated compliance", "compliancePerClusterStatuses", compliancePerClusterStatuses,
+		hasNonCompliantClusters)
 
-	originalInstance := instance.DeepCopy()
+	err = syncer.updateComplianceStatus(ctx, instance, instance.DeepCopy(), compliancePerClusterStatuses,
+		hasNonCompliantClusters)
+	syncer.log.Error(err, "Failed to update compliance  status")
+}
+
+func (syncer *policyDBSyncer) updateComplianceStatus(ctx context.Context, instance, originalInstance *policiesv1.Policy,
+	compliancePerClusterStatuses []*policiesv1.CompliancePerClusterStatus, hasNonCompliantClusters bool) error {
 	instance.Status.Status = compliancePerClusterStatuses
 	instance.Status.ComplianceState = ""
 
@@ -135,8 +149,10 @@ func (syncer *policyDBSyncer) handlePolicy(ctx context.Context, instance *polici
 
 	err := syncer.client.Status().Patch(ctx, instance, client.MergeFrom(originalInstance))
 	if err != nil && !errors.IsNotFound(err) {
-		syncer.log.Error(err, "Failed to update policy status...")
+		return fmt.Errorf("failed to update policy CR: %w", err)
 	}
+
+	return nil
 }
 
 func addPolicyDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool, syncInterval time.Duration) error {
