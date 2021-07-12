@@ -34,6 +34,7 @@ func (syncer *policyDBSyncer) Start(stopChannel <-chan struct{}) error {
 	ticker := time.NewTicker(syncer.syncInterval)
 
 	ctx, cancelContext := context.WithCancel(context.Background())
+	defer cancelContext()
 
 	for {
 		select {
