@@ -1,4 +1,4 @@
-module github.com/open-cluster-management/hub-of-hubs-spec-syncer
+module github.com/open-cluster-management/hub-of-hubs-status-sync
 
 go 1.16
 

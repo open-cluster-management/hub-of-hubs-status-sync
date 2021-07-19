@@ -13,7 +13,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v4/pgxpool"
-	"github.com/open-cluster-management/hub-of-hubs-spec-syncer/pkg/dbsyncers"
+	"github.com/open-cluster-management/hub-of-hubs-status-sync/pkg/dbsyncers"
 	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
 	"github.com/spf13/pflag"
