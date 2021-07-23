@@ -27,9 +27,6 @@ COPY --from=builder /workspace/${COMPONENT}/bin/${COMPONENT} /usr/local/bin/${CO
 COPY build/scripts/user_setup /usr/local/scripts/user_setup
 RUN  /usr/local/scripts/user_setup
 
-COPY  build/scripts/entrypoint /usr/local/bin/entrypoint
-ENTRYPOINT ["/usr/local/bin/entrypoint"]
-
 RUN microdnf update && \
     microdnf clean all
 
