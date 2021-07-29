@@ -133,7 +133,10 @@ func (syncer *policyDBSyncer) handlePolicy(ctx context.Context, instance *polici
 
 	err = syncer.updateComplianceStatus(ctx, instance, instance.DeepCopy(), compliancePerClusterStatuses,
 		hasNonCompliantClusters)
-	syncer.log.Error(err, "Failed to update compliance  status")
+
+	if err != nil {
+		syncer.log.Error(err, "Failed to update compliance  status")
+	}
 }
 
 func (syncer *policyDBSyncer) updateComplianceStatus(ctx context.Context, instance, originalInstance *policiesv1.Policy,
