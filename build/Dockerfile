@@ -22,7 +22,7 @@ ENV USER_UID=1001
 ENV USER_NAME=${COMPONENT}
 
 # install operator binary
-COPY --from=builder /workspace/${COMPONENT}/bin/${COMPONENT} /usr/local/bin/${COMPONENT}
+COPY --from=builder /workspace/${COMPONENT}/bin/${COMPONENT} /usr/local/bin/manager
 
 COPY build/scripts/user_setup /usr/local/scripts/user_setup
 RUN  /usr/local/scripts/user_setup
@@ -31,3 +31,4 @@ RUN microdnf update && \
     microdnf clean all
 
 USER ${USER_UID}
+ENTRYPOINT ["/usr/local/bin/manager"]

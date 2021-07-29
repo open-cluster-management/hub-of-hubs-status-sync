@@ -17,8 +17,6 @@ spec:
       containers:
         - name: ${COMPONENT}
           image: ${REGISTRY}/${COMPONENT}:${IMAGE_TAG}
-          command:
-          - ${COMPONENT}
           imagePullPolicy: Always
           env:
             - name: POD_NAMESPACE
@@ -35,8 +33,6 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
-            - name: OPERATOR_NAME
-              value: ${COMPONENT}
             - name: HOH_STATUS_SYNC_INTERVAL
               value: 5s
 ---
