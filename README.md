@@ -1,6 +1,9 @@
 [comment]: # ( Copyright Contributors to the Open Cluster Management project )
 
 # Hub-of-Hubs Status Syncer
+
+[![Go Report Card](https://goreportcard.com/badge/github.com/open-cluster-management/hub-of-hubs-status-sync)](https://goreportcard.com/report/github.com/open-cluster-management/hub-of-hubs-status-sync)
+
 The status sync component of [Hub-of-Hubs](https://github.com/open-cluster-management/hub-of-hubs).
 
 :exclamation: Verify that [vadimeisenbergibm/governance-policy-propagator:no_status_update](https://hub.docker.com/layers/156812667/vadimeisenbergibm/governance-policy-propagator/no_status_update/images/sha256-d622f20d24f1e363ffc442f80a24eaafd2a58d953a44d8f8f798e86dbe66ead0) image is used for the governance policy propagator:
