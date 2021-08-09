@@ -113,7 +113,7 @@ func (syncer *policyDBSyncer) handlePolicy(ctx context.Context, instance *polici
 		syncer.log.Info("handling a line in compliance table", "clusterName", clusterName,
 			"leafHubName", leafHubName, "compliance", complianceInDB)
 
-		var compliance policiesv1.ComplianceState = ""
+		var compliance policiesv1.ComplianceState
 		if mappedCompliance, ok := dbEnumToPolicyComplianceStateMap[complianceInDB]; ok {
 			compliance = mappedCompliance
 		}
