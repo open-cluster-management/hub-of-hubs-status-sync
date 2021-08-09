@@ -159,7 +159,7 @@ func (syncer *policyDBSyncer) updateComplianceStatus(ctx context.Context, instan
 }
 
 func addPolicyDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool, syncInterval time.Duration) error {
-	return mgr.Add(&policyDBSyncer{
+	err := mgr.Add(&policyDBSyncer{
 		client:                 mgr.GetClient(),
 		log:                    ctrl.Log.WithName("policy-db-syncer"),
 		databaseConnectionPool: databaseConnectionPool,
@@ -167,4 +167,6 @@ func addPolicyDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool, s
 		tableName:              "compliance",
 		specTableName:          "policies",
 	})
+
+	return fmt.Errorf("failed to add policy syncer to the manager: %w", err)
 }
