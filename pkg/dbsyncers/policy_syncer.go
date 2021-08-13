@@ -167,6 +167,9 @@ func addPolicyDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool, s
 		tableName:              "compliance",
 		specTableName:          "policies",
 	})
+	if err != nil {
+		return fmt.Errorf("failed to add policy syncer to the manager: %w", err)
+	}
 
-	return fmt.Errorf("failed to add policy syncer to the manager: %w", err)
+	return nil
 }
