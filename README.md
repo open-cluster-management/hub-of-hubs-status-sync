@@ -54,6 +54,7 @@ python -c "import sys, urllib as ul; print ul.quote_plus(sys.argv[1])" 'YourPass
 ```
 
 `WATCH_NAMESPACE` can be defined empty so the controller will watch all the namespaces.
+
 `POD_NAMESPACE` should usually be `open-cluster-management`
 
 ```
