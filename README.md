@@ -18,6 +18,13 @@ This version of the policy propagator does not update the status of the policy, 
 
 The status sync component is implemented as a set of "DBSyncer" components that periodically scan tables in the `status` schema and update required CRs. Note that while these DB syncers are not Kubernetes controllers by definition (they do not reconcile CRs and do not react to changes in the CRs), they can be managed by the controller-runtime `Manager`. They are added to the `Manager` using its `Add(Runnable)` method.
 
+## Environment variables
+
+The following environment variables are required for the most tasks below:
+
+* `REGISTRY`, for example `docker.io/vadimeisenbergibm`.
+* `IMAGE_TAG`, for example `v0.1.0`.
+
 ## Build to run locally
 
 ```
@@ -36,6 +43,7 @@ Set the following environment variables:
 
 * DATABASE_URL
 * WATCH_NAMESPACE
+* POD_NAMESPACE
 
 Set the `DATABASE_URL` according to the PostgreSQL URL format: `postgres://YourUserName:YourURLEscapedPassword@YourHostname:5432/YourDatabaseName?sslmode=verify-full`.
 
@@ -46,14 +54,13 @@ python -c "import sys, urllib as ul; print ul.quote_plus(sys.argv[1])" 'YourPass
 ```
 
 `WATCH_NAMESPACE` can be defined empty so the controller will watch all the namespaces.
+`POD_NAMESPACE` should usually be `open-cluster-management`
 
 ```
 ./bin/hub-of-hubs-status-sync --kubeconfig $TOP_HUB_CONFIG
 ```
 
 ## Build image
-
-Define the `REGISTRY` environment variable.
 
 ```
 make build-images
@@ -70,5 +77,5 @@ make build-images
 1.  Deploy the operator:
 
     ```
-    IMAGE_TAG=latest COMPONENT=$(basename $(pwd)) envsubst < deploy/operator.yaml.template | kubectl apply --kubeconfig $TOP_HUB_CONFIG -n open-cluster-management -f -
+    COMPONENT=$(basename $(pwd)) envsubst < deploy/operator.yaml.template | kubectl apply --kubeconfig $TOP_HUB_CONFIG -n open-cluster-management -f -
     ```
