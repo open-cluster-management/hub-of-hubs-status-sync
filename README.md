@@ -3,6 +3,7 @@
 # Hub-of-Hubs Status Syncer
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/open-cluster-management/hub-of-hubs-status-sync)](https://goreportcard.com/report/github.com/open-cluster-management/hub-of-hubs-status-sync)
+[![License](https://img.shields.io/github/license/open-cluster-management/hub-of-hubs-status-sync)](/LICENSE)
 
 The status sync component of [Hub-of-Hubs](https://github.com/open-cluster-management/hub-of-hubs).
 
