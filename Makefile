@@ -6,27 +6,39 @@
 # -------------------------------------------------------------
 # This makefile defines the following targets
 #
-#   - all (default) - performs code formatting and builds the code
-#   - fmt - format code
-#   - bsa_example - builds bsa_example as an executable
-#   - test - performs tests
-#   - lint - runs code analysis tools
+#   - all (default) - formats the code, runs liners, downloads vendor libs, and builds executable
+#   - fmt - formats the code
+#   - vendor - download all third party libraries and puts them inside vendor directory
+#   - clean-vendor - removes third party libraries from vendor directory
+#   - build - builds the controller
+#   - build-images - builds docker image locally for running the components using docker
+#   - push-images - pushes the local docker image to docker registry
 #   - clean - cleans the build directories
+#   - clean-all - superset of 'clean' that also removes vendor dir
+#   - lint - runs code analysis tools
 
 COMPONENT := $(shell basename $(shell pwd))
 IMAGE_TAG ?= latest
 IMAGE := ${REGISTRY}/${COMPONENT}:${IMAGE_TAG}
 
-.PHONY: all				##perform code formatting and builds the code
-all: fmt build
+.PHONY: all				##formats the code, runs liners, downloads vendor libs, and builds executable
+all: clean-vendor fmt lint vendor build
 
-.PHONY: fmt				##format code
+.PHONY: fmt				##formats the code
 fmt:
 	@gci -w .
 	@go fmt ./...
 	@gofumpt -w .
 
-.PHONY: build		##build the controller
+.PHONY: vendor			##download all third party libraries and puts them inside vendor directory
+vendor:
+	@go mod vendor
+
+.PHONY: clean-vendor			##removes third party libraries from vendor directory
+clean-vendor:
+	-@rm -rf vendor
+
+.PHONY: build			##builds the controller
 build:
 	@go build -o bin/${COMPONENT} cmd/manager/main.go
 
@@ -34,19 +46,22 @@ build:
 build-images: all
 	docker build -t ${IMAGE} --build-arg COMPONENT=${COMPONENT} -f build/Dockerfile .
 
-.PHONY: push-images			##pushes the local docker image to 'docker.io' docker registry
+.PHONY: push-images			##pushes the local docker image to docker registry
 push-images: build-images
 	@docker push ${IMAGE}
 
-.PHONY: clean			##clean the build directories
+.PHONY: clean			##cleans the build directories
 clean:
 	@rm -rf bin
 
+.PHONY: clean-all			##superset of 'clean' that also removes vendor dir
+clean-all: clean-vendor clean
+
 .PHONY: lint				##runs code analysis tools
-lint:
+lint: clean-vendor
 	go vet ./...
-	golangci-lint run ./...
 	golint ./...
+	golangci-lint run ./...
 
 .PHONY: help				##show this help message
 help:
