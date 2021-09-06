@@ -70,7 +70,8 @@ func doMain() int {
 		return 1
 	}
 
-	dbConnectionPool, err := pgxpool.Connect(context.Background(), databaseURL)
+	// when switched to controller runtime 0.7, use the context returned by ctrl.SetupSignalHandler()
+	dbConnectionPool, err := pgxpool.Connect(context.TODO(), databaseURL)
 	if err != nil {
 		log.Error(err, "Failed to connect to the database")
 		return 1
