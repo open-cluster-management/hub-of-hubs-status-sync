@@ -16,6 +16,8 @@ spec:
       serviceAccountName: ${COMPONENT}
       containers:
         - name: ${COMPONENT}
+          args:
+            - '--zap-devel=true'
           image: ${REGISTRY}/${COMPONENT}:${IMAGE_TAG}
           imagePullPolicy: Always
           env:
