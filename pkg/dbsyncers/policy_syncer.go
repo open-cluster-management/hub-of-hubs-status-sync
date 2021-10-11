@@ -88,7 +88,7 @@ func (syncer *policyDBSyncer) handlePolicy(ctx context.Context, instance *polici
 
 	rows, err := syncer.databaseConnectionPool.Query(ctx,
 		fmt.Sprintf(`SELECT cluster_name, leaf_hub_name, compliance FROM status.%s
-			     WHERE policy_id = '%s' ORDER BY leaf_hub_name, cluster_name`,
+			     WHERE id = '%s' ORDER BY leaf_hub_name, cluster_name`,
 			syncer.tableName, string(instance.GetUID())))
 	if err != nil {
 		syncer.log.Error(err, "error in getting policy statuses from DB")
