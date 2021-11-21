@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	dbEnumCompliant    = "compliant"
-	dbEnumNonCompliant = "non_compliant"
+	dbEnumCompliant          = "compliant"
+	dbEnumNonCompliant       = "non_compliant"
+	timeoutInIntervalPeriods = 3
 )
 
 type policyDBSyncer struct {
@@ -52,7 +53,9 @@ func (syncer *policyDBSyncer) periodicSync(ctx context.Context) {
 			return
 
 		case <-ticker.C:
-			syncer.sync(ctx)
+			ctxWithTimeout, cancelFunc := context.WithTimeout(ctx, syncer.syncInterval*timeoutInIntervalPeriods)
+			syncer.sync(ctxWithTimeout)
+			cancelFunc() // cancel only child ctx and is used to cleanup resources once context expires or sync is done.
 		}
 	}
 }
