@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	dbEnumCompliant    = "compliant"
-	dbEnumNonCompliant = "non_compliant"
+	dbEnumCompliant          = "compliant"
+	dbEnumNonCompliant       = "non_compliant"
+	timeoutInIntervalPeriods = 3
 )
 
 type policyDBSyncer struct {
@@ -31,22 +32,30 @@ type policyDBSyncer struct {
 }
 
 func (syncer *policyDBSyncer) Start(stopChannel <-chan struct{}) error {
-	ticker := time.NewTicker(syncer.syncInterval)
-
 	ctx, cancelContext := context.WithCancel(context.Background())
 	defer cancelContext()
 
+	go syncer.periodicSync(ctx)
+
+	<-stopChannel // blocking wait for stop event
+	syncer.log.Info("stop performing sync", "table", syncer.tableName)
+
+	return nil // context cancel is called before exiting this function
+}
+
+func (syncer *policyDBSyncer) periodicSync(ctx context.Context) {
+	ticker := time.NewTicker(syncer.syncInterval)
+
 	for {
 		select {
-		case <-stopChannel:
+		case <-ctx.Done(): // we have received a signal to stop
 			ticker.Stop()
+			return
 
-			syncer.log.Info("stop performing sync", "table", syncer.tableName)
-			cancelContext()
-
-			return nil
 		case <-ticker.C:
-			go syncer.sync(ctx)
+			ctxWithTimeout, cancelFunc := context.WithTimeout(ctx, syncer.syncInterval*timeoutInIntervalPeriods)
+			syncer.sync(ctxWithTimeout)
+			cancelFunc() // cancel only child ctx and is used to cleanup resources once context expires or sync is done.
 		}
 	}
 }
