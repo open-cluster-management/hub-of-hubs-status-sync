@@ -67,6 +67,7 @@ func (syncer *policyDBSyncer) periodicSync(ctx context.Context) {
 			}
 
 			ctxWithTimeout, cancelFunc = context.WithTimeout(ctx, syncer.syncInterval)
+
 			syncer.sync(ctxWithTimeout)
 		}
 	}
