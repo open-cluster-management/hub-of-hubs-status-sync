@@ -46,14 +46,24 @@ func (syncer *policyDBSyncer) Start(stopChannel <-chan struct{}) error {
 func (syncer *policyDBSyncer) periodicSync(ctx context.Context) {
 	ticker := time.NewTicker(syncer.syncInterval)
 
+	var (
+		cancelFunc     context.CancelFunc
+		ctxWithTimeout context.Context
+	)
+
 	for {
 		select {
 		case <-ctx.Done(): // we have received a signal to stop
 			ticker.Stop()
+
+			if cancelFunc != nil {
+				cancelFunc()
+			}
+
 			return
 
 		case <-ticker.C:
-			ctxWithTimeout, _ = context.WithTimeout(ctx, syncer.syncInterval*timeoutInIntervalPeriods)
+			ctxWithTimeout, cancelFunc = context.WithTimeout(ctx, syncer.syncInterval*timeoutInIntervalPeriods)
 			syncer.sync(ctxWithTimeout)
 		}
 	}
