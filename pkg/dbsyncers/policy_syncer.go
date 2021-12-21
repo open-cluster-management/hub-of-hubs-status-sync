@@ -53,9 +53,8 @@ func (syncer *policyDBSyncer) periodicSync(ctx context.Context) {
 			return
 
 		case <-ticker.C:
-			ctxWithTimeout, cancelFunc := context.WithTimeout(ctx, syncer.syncInterval*timeoutInIntervalPeriods)
+			ctxWithTimeout, _ = context.WithTimeout(ctx, syncer.syncInterval*timeoutInIntervalPeriods)
 			syncer.sync(ctxWithTimeout)
-			cancelFunc() // cancel only child ctx and is used to cleanup resources once context expires or sync is done.
 		}
 	}
 }
