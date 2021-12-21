@@ -17,9 +17,8 @@ import (
 )
 
 const (
-	dbEnumCompliant          = "compliant"
-	dbEnumNonCompliant       = "non_compliant"
-	timeoutInIntervalPeriods = 3
+	dbEnumCompliant    = "compliant"
+	dbEnumNonCompliant = "non_compliant"
 )
 
 type policyDBSyncer struct {
@@ -63,7 +62,11 @@ func (syncer *policyDBSyncer) periodicSync(ctx context.Context) {
 			return
 
 		case <-ticker.C:
-			ctxWithTimeout, cancelFunc = context.WithTimeout(ctx, syncer.syncInterval*timeoutInIntervalPeriods)
+			if cancelFunc != nil {
+				cancelFunc()
+			}
+
+			ctxWithTimeout, cancelFunc = context.WithTimeout(ctx, syncer.syncInterval)
 			syncer.sync(ctxWithTimeout)
 		}
 	}
