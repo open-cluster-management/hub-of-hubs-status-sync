@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v4/pgxpool"
-	policiesv1 "github.com/open-cluster-management/governance-policy-propagator/pkg/apis/policy/v1"
+	policiesv1 "github.com/open-cluster-management/governance-policy-propagator/api/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,13 +30,13 @@ type policyDBSyncer struct {
 	specTableName          string
 }
 
-func (syncer *policyDBSyncer) Start(stopChannel <-chan struct{}) error {
-	ctx, cancelContext := context.WithCancel(context.Background())
+func (syncer *policyDBSyncer) Start(ctx context.Context) error {
+	ctxWithCancel, cancelContext := context.WithCancel(ctx)
 	defer cancelContext()
 
-	go syncer.periodicSync(ctx)
+	go syncer.periodicSync(ctxWithCancel)
 
-	<-stopChannel // blocking wait for stop event
+	<-ctx.Done() // blocking wait for stop event
 	syncer.log.Info("stop performing sync", "table", syncer.tableName)
 
 	return nil // context cancel is called before exiting this function
