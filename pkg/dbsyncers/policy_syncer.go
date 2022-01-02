@@ -147,7 +147,7 @@ func (syncer *policyDBSyncer) handlePolicy(ctx context.Context, instance *polici
 		compliancePerClusterStatuses = append(compliancePerClusterStatuses, &policiesv1.CompliancePerClusterStatus{
 			ComplianceState:  compliance,
 			ClusterName:      clusterName,
-			ClusterNamespace: leafHubName,
+			ClusterNamespace: clusterName,
 		})
 	}
 
