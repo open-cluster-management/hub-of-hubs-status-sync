@@ -1,4 +1,4 @@
-module github.com/open-cluster-management/hub-of-hubs-status-sync
+module github.com/stolostron/hub-of-hubs-status-sync
 
 go 1.17
 

@@ -2,11 +2,11 @@
 
 # Hub-of-Hubs Status Sync
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/open-cluster-management/hub-of-hubs-status-sync)](https://goreportcard.com/report/github.com/open-cluster-management/hub-of-hubs-status-sync)
-[![Go Reference](https://pkg.go.dev/badge/github.com/open-cluster-management/hub-of-hubs-status-sync.svg)](https://pkg.go.dev/github.com/open-cluster-management/hub-of-hubs-status-sync)
+[![Go Report Card](https://goreportcard.com/badge/github.com/stolostron/hub-of-hubs-status-sync)](https://goreportcard.com/report/github.com/stolostron/hub-of-hubs-status-sync)
+[![Go Reference](https://pkg.go.dev/badge/github.com/stolostron/hub-of-hubs-status-sync.svg)](https://pkg.go.dev/github.com/stolostron/hub-of-hubs-status-sync)
 [![License](https://img.shields.io/github/license/open-cluster-management/hub-of-hubs-status-sync)](/LICENSE)
 
-The status sync component of [Hub-of-Hubs](https://github.com/open-cluster-management/hub-of-hubs).
+The status sync component of [Hub-of-Hubs](https://github.com/stolostron/hub-of-hubs).
 
 :exclamation: Verify that [vadimeisenbergibm/governance-policy-propagator:no_status_update](https://hub.docker.com/layers/156812667/vadimeisenbergibm/governance-policy-propagator/no_status_update/images/sha256-d622f20d24f1e363ffc442f80a24eaafd2a58d953a44d8f8f798e86dbe66ead0) image is used for the governance policy propagator:
 
