@@ -13,9 +13,9 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v4/pgxpool"
-	"github.com/stolostron/hub-of-hubs-status-sync/pkg/dbsyncers"
 	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 	"github.com/spf13/pflag"
+	"github.com/stolostron/hub-of-hubs-status-sync/pkg/dbsyncers"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
