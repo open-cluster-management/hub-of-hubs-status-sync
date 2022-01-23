@@ -8,11 +8,11 @@
 
 The status sync component of [Hub-of-Hubs](https://github.com/stolostron/hub-of-hubs).
 
-:exclamation: Verify that [vadimeisenbergibm/governance-policy-propagator:no_status_update](https://hub.docker.com/layers/156812667/vadimeisenbergibm/governance-policy-propagator/no_status_update/images/sha256-d622f20d24f1e363ffc442f80a24eaafd2a58d953a44d8f8f798e86dbe66ead0) image is used for the governance policy propagator:
+:exclamation: Verify that [quay.io/open-cluster-management-hub-of-hubs/governance-policy-propagator:no_status_update](https://quay.io/repository/open-cluster-management-hub-of-hubs/governance-policy-propagator/manifest/sha256:2badf88746e3810723972bcec3b59d7b1b87cc4125fe65025c51dedbe6a3ad86) image is used for the governance policy propagator:
 
 ```
 kubectl get deployment -l component=ocm-policy-propagator -n open-cluster-management --kubeconfig $TOP_HUB_CONFIG  -o jsonpath='{.items[*].spec.template.spec.containers[*].image}'
-vadimeisenbergibm/governance-policy-propagator:no_status_update
+quay.io/open-cluster-management-hub-of-hubs/governance-policy-propagator:no_status_update
 ```
 This version of the policy propagator does not update the status of the policy, so it will not interfere with the updates from this controller.
 
