@@ -62,6 +62,7 @@ func (syncer *policyDBSyncer) periodicSync(ctx context.Context) {
 			return
 
 		case <-ticker.C:
+			// cancel the operation of the previous tick
 			if cancelFunc != nil {
 				cancelFunc()
 			}
