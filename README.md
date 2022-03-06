@@ -22,6 +22,10 @@ Go to the [Contributing guide](CONTRIBUTING.md) to learn how to get involved.
 
 The status sync component is implemented as a set of "DBSyncer" components that periodically scan tables in the `status` schema and update required CRs. Note that while these DB syncers are not Kubernetes controllers by definition (they do not reconcile CRs and do not react to changes in the CRs), they can be managed by the controller-runtime `Manager`. They are added to the `Manager` using its `Add(Runnable)` method.
 
+## The dependencies chart
+
+![Dependencies](diagrams/dependencies.svg)
+
 ## Environment variables
 
 The following environment variables are required for the most tasks below:
