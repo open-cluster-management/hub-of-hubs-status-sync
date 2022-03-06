@@ -26,6 +26,10 @@ The status sync component is implemented as a set of "DBSyncer" components that 
 
 ![Dependencies](diagrams/dependencies.svg)
 
+## The status synchronization flow
+
+![Status synchronization flow](diagrams/flowchart.svg)
+
 ## Environment variables
 
 The following environment variables are required for the most tasks below:
