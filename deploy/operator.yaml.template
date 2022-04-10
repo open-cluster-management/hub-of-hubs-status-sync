@@ -68,6 +68,17 @@ rules:
   - update
   - patch
 - apiGroups:
+  - "apps.open-cluster-management.io"
+  resources:
+  - subscriptions
+  - subscriptions/status
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+  - patch
+- apiGroups:
   - ""
   resources:
   - events
