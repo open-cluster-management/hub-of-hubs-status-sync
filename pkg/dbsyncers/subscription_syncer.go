@@ -19,6 +19,7 @@ import (
 const (
 	subscriptionsSpecTableName   = "subscriptions"
 	subscriptionsStatusTableName = "subscriptions"
+	statusPropagatedFromLeafHubs = "status propagated from leaf-hubs"
 )
 
 func addSubscriptionDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool, syncInterval time.Duration) error {
@@ -157,7 +158,7 @@ func (syncer *subscriptionDBSyncer) getSubscriptionStatus(ctx context.Context,
 
 		// each leaf hub has only 1 unique subscription deployment (name, ns)
 		for clusterName, subscriptionPerClusterStatus := range leafHubSubscriptionStatuses {
-			subscriptionStatuses[fmt.Sprintf("%s.%s", leafHubName, clusterName)] = subscriptionPerClusterStatus
+			subscriptionStatuses[clusterName] = subscriptionPerClusterStatus
 		}
 	}
 
@@ -169,6 +170,11 @@ func (syncer *subscriptionDBSyncer) updateSubscriptionStatus(ctx context.Context
 	originalSubscription := subscription.DeepCopy()
 
 	subscription.Status.Statuses = *subscriptionStatuses
+
+	if len(*subscriptionStatuses) > 0 {
+		subscription.Status.Phase = appsv1.SubscriptionPropagated
+		subscription.Status.Reason = statusPropagatedFromLeafHubs
+	}
 
 	err := syncer.client.Status().Patch(ctx, subscription, client.MergeFrom(originalSubscription))
 	if err != nil && !errors.IsNotFound(err) {
