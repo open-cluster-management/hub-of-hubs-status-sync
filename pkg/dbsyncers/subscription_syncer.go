@@ -137,13 +137,13 @@ func (syncer *subscriptionDBSyncer) getSubscriptionStatus(ctx context.Context,
 	subscription *appsv1.Subscription) (*appsv1.SubscriptionClusterStatusMap, error) {
 	rows, err := syncer.databaseConnectionPool.Query(ctx,
 		fmt.Sprintf(`SELECT leaf_hub_name, payload->'status'->'statuses' FROM status.%s
-			WHERE payload->'metadata'->>'name'=$1 AND payload->'metadata'->>'name'=$2`,
+			WHERE payload->'metadata'->>'name'=$1 AND payload->'metadata'->>'namespace'=$2`,
 			subscriptionsStatusTableName), subscription.Name, subscription.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("error in getting subscription statuses from DB - %w", err)
 	}
 
-	var subscriptionStatuses appsv1.SubscriptionClusterStatusMap
+	subscriptionStatuses := appsv1.SubscriptionClusterStatusMap{}
 
 	for rows.Next() {
 		var (
