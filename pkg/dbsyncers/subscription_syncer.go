@@ -127,7 +127,7 @@ func (syncer *subscriptionDBSyncer) handleSubscription(ctx context.Context, subs
 		return
 	}
 
-	if err = syncer.updateComplianceStatus(ctx, subscription, subscriptionStatuses); err != nil {
+	if err = syncer.updateSubscriptionStatus(ctx, subscription, subscriptionStatuses); err != nil {
 		syncer.log.Error(err, "failed to update subscription status")
 	}
 }
@@ -137,7 +137,8 @@ func (syncer *subscriptionDBSyncer) getSubscriptionStatus(ctx context.Context,
 	subscription *appsv1.Subscription) (*appsv1.SubscriptionClusterStatusMap, error) {
 	rows, err := syncer.databaseConnectionPool.Query(ctx,
 		fmt.Sprintf(`SELECT leaf_hub_name, payload->'status'->'statuses' FROM status.%s
-			WHERE id=$1`, subscriptionsStatusTableName), string(subscription.GetUID()))
+			WHERE payload->'metadata'->>'name'=$1 AND payload->'metadata'->>'name'=$2`,
+			subscriptionsStatusTableName), subscription.Name, subscription.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("error in getting subscription statuses from DB - %w", err)
 	}
@@ -163,7 +164,7 @@ func (syncer *subscriptionDBSyncer) getSubscriptionStatus(ctx context.Context,
 	return &subscriptionStatuses, nil
 }
 
-func (syncer *subscriptionDBSyncer) updateComplianceStatus(ctx context.Context, subscription *appsv1.Subscription,
+func (syncer *subscriptionDBSyncer) updateSubscriptionStatus(ctx context.Context, subscription *appsv1.Subscription,
 	subscriptionStatuses *appsv1.SubscriptionClusterStatusMap) error {
 	originalSubscription := subscription.DeepCopy()
 
