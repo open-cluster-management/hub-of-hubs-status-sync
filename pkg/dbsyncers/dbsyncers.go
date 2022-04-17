@@ -35,7 +35,8 @@ func AddToScheme(runtimeScheme *runtime.Scheme) error {
 func AddDBSyncers(mgr ctrl.Manager, dbConnectionPool *pgxpool.Pool, syncInterval time.Duration) error {
 	addDBSyncerFunctions := []func(ctrl.Manager, *pgxpool.Pool, time.Duration) error{
 		addPolicyDBSyncer,
-		addSubscriptionDBSyncer,
+		addSubscriptionStatusDBSyncer,
+		addSubscriptionReportDBSyncer,
 	}
 
 	for _, addDBSyncerFunction := range addDBSyncerFunctions {
