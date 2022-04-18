@@ -122,7 +122,6 @@ func getAggregatedSubscriptionStatuses(ctx context.Context, databaseConnectionPo
 	return subscriptionStatus, nil
 }
 
-//nolint
 func updateSubscriptionStatus(ctx context.Context, k8sClient client.Client,
 	aggregatedSubscriptionStatus *appsv1alpha1.SubscriptionStatus) error {
 	deployedSubscriptionStatus := &appsv1alpha1.SubscriptionStatus{}

@@ -127,7 +127,6 @@ func getAggregatedSubscriptionReport(ctx context.Context, databaseConnectionPool
 	return subscriptionReport, nil
 }
 
-//nolint
 func updateSubscriptionReport(ctx context.Context, k8sClient client.Client,
 	aggregatedSubscriptionReport *appsv1alpha1.SubscriptionReport) error {
 	deployedSubscriptionReport := &appsv1alpha1.SubscriptionReport{}
