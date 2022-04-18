@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 	policiesv1 "github.com/open-cluster-management/governance-policy-propagator/api/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	appsv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
+	appsv1alpha1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/scheme"
 )
@@ -19,7 +19,7 @@ import (
 func AddToScheme(runtimeScheme *runtime.Scheme) error {
 	schemeBuilders := []*scheme.Builder{
 		policiesv1.SchemeBuilder,
-		appsv1.SchemeBuilder,
+		appsv1alpha1.SchemeBuilder,
 	}
 
 	for _, schemeBuilder := range schemeBuilders {

@@ -95,6 +95,8 @@ func getSubscriptionReport(ctx context.Context, databaseConnectionPool *pgxpool.
 		return nil, fmt.Errorf("error in getting subscription-report statuses from DB - %w", err)
 	}
 
+	defer rows.Close()
+
 	subscriptionReport := appsv1alpha1.SubscriptionReport{}
 
 	for rows.Next() {

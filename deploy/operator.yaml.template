@@ -72,6 +72,8 @@ rules:
   resources:
   - subscriptions
   - subscriptions/status
+  - subscriptionstatuses
+  - subscriptionreports
   verbs:
   - get
   - list

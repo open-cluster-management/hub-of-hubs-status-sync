@@ -95,6 +95,8 @@ func getAggregatedSubscriptionStatuses(ctx context.Context, databaseConnectionPo
 		return nil, fmt.Errorf("error in getting subscription-statuses from DB - %w", err)
 	}
 
+	defer rows.Close()
+
 	subscriptionStatus := appsv1alpha1.SubscriptionStatus{}
 
 	for rows.Next() {
