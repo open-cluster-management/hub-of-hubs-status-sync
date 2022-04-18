@@ -78,6 +78,10 @@ func handleSubscriptionStatus(ctx context.Context, log logr.Logger, databaseConn
 		return
 	}
 
+	if subscriptionStatus == nil {
+		return
+	}
+
 	if err := updateSubscriptionStatus(ctx, k8sClient, subscriptionName, subscriptionNamespace,
 		subscriptionStatus); err != nil {
 		log.Error(err, "failed to update subscription-status status")
@@ -88,7 +92,7 @@ func handleSubscriptionStatus(ctx context.Context, log logr.Logger, databaseConn
 func getAggregatedSubscriptionStatuses(ctx context.Context, databaseConnectionPool *pgxpool.Pool,
 	subscriptionName string, subscriptionNamespace string) (*appsv1alpha1.SubscriptionStatus, error) {
 	rows, err := databaseConnectionPool.Query(ctx,
-		fmt.Sprintf(`SELECT payload->'statuses' FROM status.%s
+		fmt.Sprintf(`SELECT payload FROM status.%s
 			WHERE payload->'metadata'->>'name'=$1 AND payload->'metadata'->>'namespace'=$2`,
 			subscriptionStatusesTableName), subscriptionName, subscriptionNamespace)
 	if err != nil {
@@ -97,21 +101,25 @@ func getAggregatedSubscriptionStatuses(ctx context.Context, databaseConnectionPo
 
 	defer rows.Close()
 
-	subscriptionStatus := appsv1alpha1.SubscriptionStatus{}
+	var subscriptionStatus *appsv1alpha1.SubscriptionStatus
 
 	for rows.Next() {
-		var leafHubSubscriptionStatuses appsv1alpha1.SubscriptionClusterStatusMap
+		var leafHubSubscriptionStatus appsv1alpha1.SubscriptionStatus
 
-		if err := rows.Scan(&leafHubSubscriptionStatuses); err != nil {
+		if err := rows.Scan(&leafHubSubscriptionStatus); err != nil {
 			return nil, fmt.Errorf("error getting subscription-status from DB - %w", err)
+		}
+
+		if subscriptionStatus == nil {
+			subscriptionStatus = cloneCleanedSubscriptionStatus(leafHubSubscriptionStatus)
 		}
 
 		// assuming that cluster names are unique across the hubs, all we need to do is a complete merge
 		subscriptionStatus.Statuses.SubscriptionStatus = append(subscriptionStatus.Statuses.SubscriptionStatus,
-			leafHubSubscriptionStatuses.SubscriptionStatus...)
+			leafHubSubscriptionStatus.Statuses.SubscriptionStatus...)
 	}
 
-	return &subscriptionStatus, nil
+	return subscriptionStatus, nil
 }
 
 //nolint
@@ -123,14 +131,6 @@ func updateSubscriptionStatus(ctx context.Context, k8sClient client.Client, subs
 		originalSubscriptionStatus)
 	if err != nil {
 		if errors.IsNotFound(err) { // create CR
-			// assign names
-			subscriptionStatus.Name = subscriptionName
-			subscriptionStatus.Namespace = subscriptionNamespace
-			// assign labels
-			subscriptionStatus.Labels = map[string]string{}
-			subscriptionStatus.Labels[appsv1.AnnotationHosting] = fmt.Sprintf("%s.%s",
-				subscriptionNamespace, subscriptionName)
-
 			if err := k8sClient.Create(ctx, subscriptionStatus); err != nil {
 				return fmt.Errorf("failed to create subscription-status {name=%s, namespace=%s} - %w",
 					subscriptionName, subscriptionNamespace, err)
@@ -138,11 +138,30 @@ func updateSubscriptionStatus(ctx context.Context, k8sClient client.Client, subs
 		}
 	}
 
-	err = k8sClient.Status().Patch(ctx, subscriptionStatus, client.MergeFrom(originalSubscriptionStatus))
+	// if object exists, clone and update
+	updatedSubscriptionStatus := cloneCleanedSubscriptionStatus(*originalSubscriptionStatus)
+	updatedSubscriptionStatus.Statuses = subscriptionStatus.Statuses
+
+	err = k8sClient.Status().Patch(ctx, updatedSubscriptionStatus, client.MergeFrom(originalSubscriptionStatus))
 	if err != nil && !errors.IsNotFound(err) {
 		return fmt.Errorf("failed to update subscription-status CR (name=%s, namespace=%s): %w", subscriptionName,
 			subscriptionNamespace, err)
 	}
 
 	return nil
+}
+
+func cloneCleanedSubscriptionStatus(subStatus appsv1alpha1.SubscriptionStatus) *appsv1alpha1.SubscriptionStatus {
+	clone := subStatus.DeepCopy()
+	// assign annotations
+	clone.Annotations = map[string]string{}
+	clone.Annotations[hubOfHubsAggregatedViewAnnotationKey] = hubOfHubsGlobalView
+	// assign labels
+	clone.Labels = map[string]string{}
+	clone.Labels[appsv1.AnnotationHosting] = fmt.Sprintf("%s.%s",
+		clone.Namespace, clone.Name)
+	// reset statuses
+	clone.Statuses = appsv1alpha1.SubscriptionClusterStatusMap{}
+
+	return clone
 }

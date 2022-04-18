@@ -19,7 +19,9 @@ import (
 )
 
 const (
-	subscriptionReportsTableName = "subscription_reports"
+	subscriptionReportsTableName         = "subscription_reports"
+	hubOfHubsAggregatedViewAnnotationKey = "hub-of-hubs.open-cluster-management.io/appsView"
+	hubOfHubsGlobalView                  = "globalView"
 )
 
 func addSubscriptionReportDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool,
@@ -78,6 +80,10 @@ func handleSubscriptionReport(ctx context.Context, log logr.Logger, databaseConn
 		return
 	}
 
+	if subscriptionReport == nil {
+		return
+	}
+
 	if err := updateSubscriptionReport(ctx, k8sClient, subscriptionName, subscriptionNamespace,
 		subscriptionReport); err != nil {
 		log.Error(err, "failed to update subscription-status status")
@@ -97,7 +103,7 @@ func getSubscriptionReport(ctx context.Context, databaseConnectionPool *pgxpool.
 
 	defer rows.Close()
 
-	subscriptionReport := appsv1alpha1.SubscriptionReport{}
+	var subscriptionReport *appsv1alpha1.SubscriptionReport
 
 	for rows.Next() {
 		var leafHubSubscriptionReport appsv1alpha1.SubscriptionReport
@@ -106,18 +112,18 @@ func getSubscriptionReport(ctx context.Context, databaseConnectionPool *pgxpool.
 			return nil, fmt.Errorf("error getting subscription reports from DB - %w", err)
 		}
 
+		// if not updated yet, clone a report from DB and clean it
+		if subscriptionReport == nil {
+			subscriptionReport = cloneCleanedSubscriptionReport(leafHubSubscriptionReport)
+		}
+
 		// update aggregated summary
 		updateSubscriptionReportSummary(&subscriptionReport.Summary, &leafHubSubscriptionReport.Summary)
-		// update resources (resources should be identical in all)
-		if len(subscriptionReport.Resources) == 0 {
-			subscriptionReport.Resources = leafHubSubscriptionReport.Resources
-			subscriptionReport.ReportType = leafHubSubscriptionReport.ReportType
-		}
 		// update results - assuming that MC names are unique across leaf-hubs, we only need to merge
 		subscriptionReport.Results = append(subscriptionReport.Results, leafHubSubscriptionReport.Results...)
 	}
 
-	return &subscriptionReport, nil
+	return subscriptionReport, nil
 }
 
 //nolint
@@ -129,14 +135,6 @@ func updateSubscriptionReport(ctx context.Context, k8sClient client.Client, subs
 		originalSubscriptionReport)
 	if err != nil {
 		if errors.IsNotFound(err) { // create CR
-			// assign names
-			subscriptionReport.Name = subscriptionName
-			subscriptionReport.Namespace = subscriptionNamespace
-			// assign labels
-			subscriptionReport.Labels = map[string]string{}
-			subscriptionReport.Labels[appsv1.AnnotationHosting] = fmt.Sprintf("%s.%s",
-				subscriptionNamespace, subscriptionName)
-
 			if err := k8sClient.Create(ctx, subscriptionReport); err != nil {
 				return fmt.Errorf("failed to create subscription-report {name=%s, namespace=%s} - %w",
 					subscriptionName, subscriptionNamespace, err)
@@ -144,7 +142,12 @@ func updateSubscriptionReport(ctx context.Context, k8sClient client.Client, subs
 		}
 	}
 
-	err = k8sClient.Status().Patch(ctx, subscriptionReport, client.MergeFrom(originalSubscriptionReport))
+	// if object exists, clone and update
+	updatedSubscriptionReport := cloneCleanedSubscriptionReport(*originalSubscriptionReport)
+	updatedSubscriptionReport.Summary = subscriptionReport.Summary
+	updatedSubscriptionReport.Results = subscriptionReport.Results
+
+	err = k8sClient.Status().Patch(ctx, updatedSubscriptionReport, client.MergeFrom(originalSubscriptionReport))
 	if err != nil && !errors.IsNotFound(err) {
 		return fmt.Errorf("failed to update subscription-report CR (name=%s, namespace=%s): %w", subscriptionName,
 			subscriptionNamespace, err)
@@ -169,6 +172,23 @@ func updateSubscriptionReportSummary(aggregatedSummary *appsv1alpha1.Subscriptio
 
 	aggregatedSummary.Clusters = strconv.Itoa(stringToInt(aggregatedSummary.Clusters) +
 		stringToInt(reportSummary.Clusters))
+}
+
+func cloneCleanedSubscriptionReport(subReport appsv1alpha1.SubscriptionReport) *appsv1alpha1.SubscriptionReport {
+	clone := subReport.DeepCopy()
+	// assign annotations
+	clone.Annotations = map[string]string{}
+	clone.Annotations[hubOfHubsAggregatedViewAnnotationKey] = hubOfHubsGlobalView
+	// assign labels
+	clone.Labels = map[string]string{}
+	clone.Labels[appsv1.AnnotationHosting] = fmt.Sprintf("%s.%s",
+		clone.Namespace, clone.Name)
+	// reset report summary
+	clone.Summary = appsv1alpha1.SubscriptionReportSummary{}
+	// reset results
+	clone.Results = []*appsv1alpha1.SubscriptionReportResult{}
+
+	return clone
 }
 
 func stringToInt(numberString string) int {

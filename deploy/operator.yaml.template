@@ -73,7 +73,9 @@ rules:
   - subscriptions
   - subscriptions/status
   - subscriptionstatuses
+  - subscriptionstatuses/status
   - subscriptionreports
+  - subscriptionreports/status
   verbs:
   - create
   - get
