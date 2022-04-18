@@ -36,7 +36,7 @@ func addSubscriptionReportDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgx
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to add subscription statuses syncer to the manager: %w", err)
+		return fmt.Errorf("failed to add subscription reports syncer to the manager: %w", err)
 	}
 
 	return nil
@@ -71,10 +71,10 @@ func handleSubscriptionReport(ctx context.Context, log logr.Logger, databaseConn
 	k8sClient client.Client, subscriptionName string, subscriptionNamespace string) {
 	log.Info("handling a subscription", "name", subscriptionName, "namespace", subscriptionNamespace)
 
-	subscriptionReport, err := getSubscriptionReport(ctx, databaseConnectionPool, subscriptionName,
+	subscriptionReport, err := getAggregatedSubscriptionReport(ctx, databaseConnectionPool, subscriptionName,
 		subscriptionNamespace)
 	if err != nil {
-		log.Error(err, "failed to get status of a subscription", "name", subscriptionName,
+		log.Error(err, "failed to get subscription report", "name", subscriptionName,
 			"namespace", subscriptionNamespace)
 
 		return
@@ -84,14 +84,13 @@ func handleSubscriptionReport(ctx context.Context, log logr.Logger, databaseConn
 		return
 	}
 
-	if err := updateSubscriptionReport(ctx, k8sClient, subscriptionName, subscriptionNamespace,
-		subscriptionReport); err != nil {
-		log.Error(err, "failed to update subscription-status status")
+	if err := updateSubscriptionReport(ctx, k8sClient, subscriptionReport); err != nil {
+		log.Error(err, "failed to update subscription-report status")
 	}
 }
 
 // returns aggregated SubscriptionReport and error.
-func getSubscriptionReport(ctx context.Context, databaseConnectionPool *pgxpool.Pool,
+func getAggregatedSubscriptionReport(ctx context.Context, databaseConnectionPool *pgxpool.Pool,
 	subscriptionName string, subscriptionNamespace string) (*appsv1alpha1.SubscriptionReport, error) {
 	rows, err := databaseConnectionPool.Query(ctx,
 		fmt.Sprintf(`SELECT payload FROM status.%s
@@ -114,7 +113,9 @@ func getSubscriptionReport(ctx context.Context, databaseConnectionPool *pgxpool.
 
 		// if not updated yet, clone a report from DB and clean it
 		if subscriptionReport == nil {
-			subscriptionReport = cloneCleanedSubscriptionReport(leafHubSubscriptionReport)
+			subscriptionReport = leafHubSubscriptionReport.DeepCopy()
+			updateSubscriptionReportObject(subscriptionReport, appsv1alpha1.SubscriptionReportSummary{},
+				[]*appsv1alpha1.SubscriptionReportResult{})
 		}
 
 		// update aggregated summary
@@ -127,30 +128,36 @@ func getSubscriptionReport(ctx context.Context, databaseConnectionPool *pgxpool.
 }
 
 //nolint
-func updateSubscriptionReport(ctx context.Context, k8sClient client.Client, subscriptionName string,
-	subscriptionNamespace string, subscriptionReport *appsv1alpha1.SubscriptionReport) error {
-	originalSubscriptionReport := &appsv1alpha1.SubscriptionReport{}
+func updateSubscriptionReport(ctx context.Context, k8sClient client.Client,
+	aggregatedSubscriptionReport *appsv1alpha1.SubscriptionReport) error {
+	deployedSubscriptionReport := &appsv1alpha1.SubscriptionReport{}
 
-	err := k8sClient.Get(ctx, client.ObjectKey{Name: subscriptionName, Namespace: subscriptionNamespace},
-		originalSubscriptionReport)
+	err := k8sClient.Get(ctx, client.ObjectKey{
+		Name:      aggregatedSubscriptionReport.Name,
+		Namespace: aggregatedSubscriptionReport.Namespace,
+	},
+		deployedSubscriptionReport)
 	if err != nil {
 		if errors.IsNotFound(err) { // create CR
-			if err := k8sClient.Create(ctx, subscriptionReport); err != nil {
+			if err := k8sClient.Create(ctx, aggregatedSubscriptionReport); err != nil {
 				return fmt.Errorf("failed to create subscription-report {name=%s, namespace=%s} - %w",
-					subscriptionName, subscriptionNamespace, err)
+					aggregatedSubscriptionReport.Name, aggregatedSubscriptionReport.Namespace, err)
 			}
+
+			return nil
 		}
 	}
 
 	// if object exists, clone and update
-	updatedSubscriptionReport := cloneCleanedSubscriptionReport(*originalSubscriptionReport)
-	updatedSubscriptionReport.Summary = subscriptionReport.Summary
-	updatedSubscriptionReport.Results = subscriptionReport.Results
+	originalSubscriptionReport := deployedSubscriptionReport.DeepCopy()
 
-	err = k8sClient.Status().Patch(ctx, updatedSubscriptionReport, client.MergeFrom(originalSubscriptionReport))
-	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("failed to update subscription-report CR (name=%s, namespace=%s): %w", subscriptionName,
-			subscriptionNamespace, err)
+	updateSubscriptionReportObject(deployedSubscriptionReport, aggregatedSubscriptionReport.Summary,
+		aggregatedSubscriptionReport.Results)
+
+	err = k8sClient.Patch(ctx, deployedSubscriptionReport, client.MergeFrom(originalSubscriptionReport))
+	if err != nil {
+		return fmt.Errorf("failed to update subscription-report CR (name=%s, namespace=%s): %w",
+			deployedSubscriptionReport.Name, deployedSubscriptionReport.Namespace, err)
 	}
 
 	return nil
@@ -174,21 +181,19 @@ func updateSubscriptionReportSummary(aggregatedSummary *appsv1alpha1.Subscriptio
 		stringToInt(reportSummary.Clusters))
 }
 
-func cloneCleanedSubscriptionReport(subReport appsv1alpha1.SubscriptionReport) *appsv1alpha1.SubscriptionReport {
-	clone := subReport.DeepCopy()
+func updateSubscriptionReportObject(subscriptionReport *appsv1alpha1.SubscriptionReport,
+	updatedSummary appsv1alpha1.SubscriptionReportSummary, updatedResults []*appsv1alpha1.SubscriptionReportResult) {
 	// assign annotations
-	clone.Annotations = map[string]string{}
-	clone.Annotations[hubOfHubsAggregatedViewAnnotationKey] = hubOfHubsGlobalView
+	subscriptionReport.Annotations = map[string]string{}
+	subscriptionReport.Annotations[hubOfHubsAggregatedViewAnnotationKey] = hubOfHubsGlobalView
 	// assign labels
-	clone.Labels = map[string]string{}
-	clone.Labels[appsv1.AnnotationHosting] = fmt.Sprintf("%s.%s",
-		clone.Namespace, clone.Name)
+	subscriptionReport.Labels = map[string]string{}
+	subscriptionReport.Labels[appsv1.AnnotationHosting] = fmt.Sprintf("%s.%s",
+		subscriptionReport.Namespace, subscriptionReport.Name)
 	// reset report summary
-	clone.Summary = appsv1alpha1.SubscriptionReportSummary{}
+	subscriptionReport.Summary = updatedSummary
 	// reset results
-	clone.Results = []*appsv1alpha1.SubscriptionReportResult{}
-
-	return clone
+	subscriptionReport.Results = updatedResults
 }
 
 func stringToInt(numberString string) int {

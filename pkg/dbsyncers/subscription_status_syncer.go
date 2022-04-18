@@ -82,13 +82,12 @@ func handleSubscriptionStatus(ctx context.Context, log logr.Logger, databaseConn
 		return
 	}
 
-	if err := updateSubscriptionStatus(ctx, k8sClient, subscriptionName, subscriptionNamespace,
-		subscriptionStatus); err != nil {
+	if err := updateSubscriptionStatus(ctx, k8sClient, subscriptionStatus); err != nil {
 		log.Error(err, "failed to update subscription-status status")
 	}
 }
 
-// returns aggregated SubscriptionStatus.statuses and error.
+// returns aggregated SubscriptionStatus and error.
 func getAggregatedSubscriptionStatuses(ctx context.Context, databaseConnectionPool *pgxpool.Pool,
 	subscriptionName string, subscriptionNamespace string) (*appsv1alpha1.SubscriptionStatus, error) {
 	rows, err := databaseConnectionPool.Query(ctx,
@@ -111,7 +110,8 @@ func getAggregatedSubscriptionStatuses(ctx context.Context, databaseConnectionPo
 		}
 
 		if subscriptionStatus == nil {
-			subscriptionStatus = cloneCleanedSubscriptionStatus(leafHubSubscriptionStatus)
+			subscriptionStatus = leafHubSubscriptionStatus.DeepCopy()
+			updateSubscriptionStatusObject(subscriptionStatus, appsv1alpha1.SubscriptionClusterStatusMap{})
 		}
 
 		// assuming that cluster names are unique across the hubs, all we need to do is a complete merge
@@ -123,45 +123,49 @@ func getAggregatedSubscriptionStatuses(ctx context.Context, databaseConnectionPo
 }
 
 //nolint
-func updateSubscriptionStatus(ctx context.Context, k8sClient client.Client, subscriptionName string,
-	subscriptionNamespace string, subscriptionStatus *appsv1alpha1.SubscriptionStatus) error {
-	originalSubscriptionStatus := &appsv1alpha1.SubscriptionStatus{}
+func updateSubscriptionStatus(ctx context.Context, k8sClient client.Client,
+	aggregatedSubscriptionStatus *appsv1alpha1.SubscriptionStatus) error {
+	deployedSubscriptionStatus := &appsv1alpha1.SubscriptionStatus{}
 
-	err := k8sClient.Get(ctx, client.ObjectKey{Name: subscriptionName, Namespace: subscriptionNamespace},
-		originalSubscriptionStatus)
+	err := k8sClient.Get(ctx, client.ObjectKey{
+		Name:      aggregatedSubscriptionStatus.Name,
+		Namespace: aggregatedSubscriptionStatus.Namespace,
+	},
+		deployedSubscriptionStatus)
 	if err != nil {
 		if errors.IsNotFound(err) { // create CR
-			if err := k8sClient.Create(ctx, subscriptionStatus); err != nil {
+			if err := k8sClient.Create(ctx, aggregatedSubscriptionStatus); err != nil {
 				return fmt.Errorf("failed to create subscription-status {name=%s, namespace=%s} - %w",
-					subscriptionName, subscriptionNamespace, err)
+					aggregatedSubscriptionStatus.Name, aggregatedSubscriptionStatus.Namespace, err)
 			}
+
+			return nil
 		}
 	}
 
 	// if object exists, clone and update
-	updatedSubscriptionStatus := cloneCleanedSubscriptionStatus(*originalSubscriptionStatus)
-	updatedSubscriptionStatus.Statuses = subscriptionStatus.Statuses
+	originalSubscriptionStatus := deployedSubscriptionStatus.DeepCopy()
 
-	err = k8sClient.Status().Patch(ctx, updatedSubscriptionStatus, client.MergeFrom(originalSubscriptionStatus))
+	updateSubscriptionStatusObject(deployedSubscriptionStatus, aggregatedSubscriptionStatus.Statuses)
+
+	err = k8sClient.Patch(ctx, deployedSubscriptionStatus, client.MergeFrom(originalSubscriptionStatus))
 	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("failed to update subscription-status CR (name=%s, namespace=%s): %w", subscriptionName,
-			subscriptionNamespace, err)
+		return fmt.Errorf("failed to update subscription-status CR (name=%s, namespace=%s): %w",
+			deployedSubscriptionStatus.Name, deployedSubscriptionStatus.Namespace, err)
 	}
 
 	return nil
 }
 
-func cloneCleanedSubscriptionStatus(subStatus appsv1alpha1.SubscriptionStatus) *appsv1alpha1.SubscriptionStatus {
-	clone := subStatus.DeepCopy()
+func updateSubscriptionStatusObject(subscriptionStatus *appsv1alpha1.SubscriptionStatus,
+	statuses appsv1alpha1.SubscriptionClusterStatusMap) {
 	// assign annotations
-	clone.Annotations = map[string]string{}
-	clone.Annotations[hubOfHubsAggregatedViewAnnotationKey] = hubOfHubsGlobalView
+	subscriptionStatus.Annotations = map[string]string{}
+	subscriptionStatus.Annotations[hubOfHubsAggregatedViewAnnotationKey] = hubOfHubsGlobalView
 	// assign labels
-	clone.Labels = map[string]string{}
-	clone.Labels[appsv1.AnnotationHosting] = fmt.Sprintf("%s.%s",
-		clone.Namespace, clone.Name)
+	subscriptionStatus.Labels = map[string]string{}
+	subscriptionStatus.Labels[appsv1.AnnotationHosting] = fmt.Sprintf("%s.%s",
+		subscriptionStatus.Namespace, subscriptionStatus.Name)
 	// reset statuses
-	clone.Statuses = appsv1alpha1.SubscriptionClusterStatusMap{}
-
-	return clone
+	subscriptionStatus.Statuses = statuses
 }
