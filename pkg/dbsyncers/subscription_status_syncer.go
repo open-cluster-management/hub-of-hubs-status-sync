@@ -127,6 +127,7 @@ func updateSubscriptionStatus(ctx context.Context, k8sClient client.Client, subs
 			subscriptionStatus.Name = subscriptionName
 			subscriptionStatus.Namespace = subscriptionNamespace
 			// assign labels
+			subscriptionStatus.Labels = map[string]string{}
 			subscriptionStatus.Labels[appsv1.AnnotationHosting] = fmt.Sprintf("%s.%s",
 				subscriptionNamespace, subscriptionName)
 

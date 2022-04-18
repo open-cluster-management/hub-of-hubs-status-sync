@@ -75,6 +75,7 @@ rules:
   - subscriptionstatuses
   - subscriptionreports
   verbs:
+  - create
   - get
   - list
   - watch
