@@ -70,8 +70,6 @@ rules:
 - apiGroups:
   - "apps.open-cluster-management.io"
   resources:
-  - subscriptions
-  - subscriptions/status
   - subscriptionstatuses
   - subscriptionstatuses/status
   - subscriptionreports
