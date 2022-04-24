@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	subscriptionReportsTableName         = "subscription_reports"
+	subscriptionReportsStatusTableName   = "subscription_reports"
 	hubOfHubsAggregatedViewAnnotationKey = "hub-of-hubs.open-cluster-management.io/appsView"
 	hubOfHubsGlobalView                  = "globalView"
 )
@@ -95,7 +95,7 @@ func getAggregatedSubscriptionReport(ctx context.Context, databaseConnectionPool
 	rows, err := databaseConnectionPool.Query(ctx,
 		fmt.Sprintf(`SELECT payload FROM status.%s
 			WHERE payload->'metadata'->>'name'=$1 AND payload->'metadata'->>'namespace'=$2`,
-			subscriptionReportsTableName), subscriptionName, subscriptionNamespace)
+			subscriptionReportsStatusTableName), subscriptionName, subscriptionNamespace)
 	if err != nil {
 		return nil, fmt.Errorf("error in getting subscription-report statuses from DB - %w", err)
 	}
@@ -145,6 +145,9 @@ func updateSubscriptionReport(ctx context.Context, k8sClient client.Client,
 
 			return nil
 		}
+
+		return fmt.Errorf("failed to get subscription-report {name=%s, namespace=%s} - %w",
+			aggregatedSubscriptionReport.Name, aggregatedSubscriptionReport.Namespace, err)
 	}
 
 	// if object exists, clone and update
