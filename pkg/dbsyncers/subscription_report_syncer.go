@@ -138,6 +138,8 @@ func updateSubscriptionReport(ctx context.Context, k8sClient client.Client,
 		deployedSubscriptionReport)
 	if err != nil {
 		if errors.IsNotFound(err) { // create CR
+			aggregatedSubscriptionReport.ResourceVersion = ""
+
 			if err := k8sClient.Create(ctx, aggregatedSubscriptionReport); err != nil {
 				return fmt.Errorf("failed to create subscription-report {name=%s, namespace=%s} - %w",
 					aggregatedSubscriptionReport.Name, aggregatedSubscriptionReport.Namespace, err)

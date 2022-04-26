@@ -157,7 +157,7 @@ func updatePlacementDecision(ctx context.Context, k8sClient client.Client,
 
 	deployedPlacementDecision.Status.Decisions = aggregatedPlacementDecision.Status.Decisions
 
-	err = k8sClient.Patch(ctx, deployedPlacementDecision, client.MergeFrom(originalPlacementDecision))
+	err = k8sClient.Status().Patch(ctx, deployedPlacementDecision, client.MergeFrom(originalPlacementDecision))
 	if err != nil && !errors.IsNotFound(err) {
 		return fmt.Errorf("failed to update placement-decision CR (name=%s, namespace=%s): %w",
 			deployedPlacementDecision.Name, deployedPlacementDecision.Namespace, err)

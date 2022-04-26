@@ -97,9 +97,7 @@ func getAggregatedPlacements(ctx context.Context, databaseConnectionPool *pgxpoo
 	defer rows.Close()
 
 	// build an aggregated placement
-	aggregatedPlacement := clustersv1beta1.Placement{}
-	aggregatedPlacement.Name = placementName
-	aggregatedPlacement.Namespace = placementNamespace
+	var aggregatedPlacement *clustersv1beta1.Placement
 
 	for rows.Next() {
 		var leafHubPlacement clustersv1beta1.Placement
@@ -108,11 +106,17 @@ func getAggregatedPlacements(ctx context.Context, databaseConnectionPool *pgxpoo
 			return nil, fmt.Errorf("error getting placement from DB - %w", err)
 		}
 
+		if aggregatedPlacement == nil {
+			aggregatedPlacement = &clustersv1beta1.Placement{}
+			aggregatedPlacement.Name = placementName
+			aggregatedPlacement.Namespace = placementNamespace
+		}
+
 		// assuming that cluster names are unique across the hubs, all we need to do is a complete merge
 		aggregatedPlacement.Status.NumberOfSelectedClusters += leafHubPlacement.Status.NumberOfSelectedClusters
 	}
 
-	return &aggregatedPlacement, nil
+	return aggregatedPlacement, nil
 }
 
 func updatePlacement(ctx context.Context, k8sClient client.Client,
@@ -138,7 +142,7 @@ func updatePlacement(ctx context.Context, k8sClient client.Client,
 
 	deployedPlacement.Status.NumberOfSelectedClusters = aggregatedPlacement.Status.NumberOfSelectedClusters
 
-	err = k8sClient.Patch(ctx, deployedPlacement, client.MergeFrom(originalPlacement))
+	err = k8sClient.Status().Patch(ctx, deployedPlacement, client.MergeFrom(originalPlacement))
 	if err != nil && !errors.IsNotFound(err) {
 		return fmt.Errorf("failed to update placement CR (name=%s, namespace=%s): %w",
 			deployedPlacement.Name, deployedPlacement.Namespace, err)

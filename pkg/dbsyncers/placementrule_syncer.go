@@ -100,9 +100,7 @@ func getAggregatedPlacementRules(ctx context.Context, databaseConnectionPool *pg
 	defer rows.Close()
 
 	// build an aggregated placement-rule
-	aggregatedPlacementRule := placementrulesv1.PlacementRule{}
-	aggregatedPlacementRule.Name = placementRuleName
-	aggregatedPlacementRule.Namespace = placementRuleNamespace
+	var aggregatedPlacementRule *placementrulesv1.PlacementRule
 
 	for rows.Next() {
 		var leafHubPlacementRule placementrulesv1.PlacementRule
@@ -111,12 +109,18 @@ func getAggregatedPlacementRules(ctx context.Context, databaseConnectionPool *pg
 			return nil, fmt.Errorf("error getting placementrule from DB - %w", err)
 		}
 
+		if aggregatedPlacementRule == nil {
+			aggregatedPlacementRule = &placementrulesv1.PlacementRule{}
+			aggregatedPlacementRule.Name = placementRuleName
+			aggregatedPlacementRule.Namespace = placementRuleNamespace
+		}
+
 		// assuming that cluster names are unique across the hubs, all we need to do is a complete merge
 		aggregatedPlacementRule.Status.Decisions = append(aggregatedPlacementRule.Status.Decisions,
 			leafHubPlacementRule.Status.Decisions...)
 	}
 
-	return &aggregatedPlacementRule, nil
+	return aggregatedPlacementRule, nil
 }
 
 func updatePlacementRule(ctx context.Context, k8sClient client.Client,
@@ -142,7 +146,7 @@ func updatePlacementRule(ctx context.Context, k8sClient client.Client,
 
 	deployedPlacementRule.Status = aggregatedPlacementRule.Status
 
-	err = k8sClient.Patch(ctx, deployedPlacementRule, client.MergeFrom(originalPlacementRule))
+	err = k8sClient.Status().Patch(ctx, deployedPlacementRule, client.MergeFrom(originalPlacementRule))
 	if err != nil && !errors.IsNotFound(err) {
 		return fmt.Errorf("failed to update placementrule CR (name=%s, namespace=%s): %w",
 			deployedPlacementRule.Name, deployedPlacementRule.Namespace, err)

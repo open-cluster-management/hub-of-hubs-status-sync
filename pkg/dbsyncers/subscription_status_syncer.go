@@ -133,6 +133,8 @@ func updateSubscriptionStatus(ctx context.Context, k8sClient client.Client,
 		deployedSubscriptionStatus)
 	if err != nil {
 		if errors.IsNotFound(err) { // create CR
+			aggregatedSubscriptionStatus.ResourceVersion = ""
+
 			if err := k8sClient.Create(ctx, aggregatedSubscriptionStatus); err != nil {
 				return fmt.Errorf("failed to create subscription-status {name=%s, namespace=%s} - %w",
 					aggregatedSubscriptionStatus.Name, aggregatedSubscriptionStatus.Namespace, err)
