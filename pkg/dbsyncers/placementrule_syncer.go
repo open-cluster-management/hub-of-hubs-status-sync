@@ -11,7 +11,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"k8s.io/apimachinery/pkg/api/errors"
-	v1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/placementrule/v1"
+	placementrulesv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/placementrule/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -88,7 +88,7 @@ func handlePlacementRuleStatus(ctx context.Context, log logr.Logger, databaseCon
 
 // returns aggregated PlacementRule (status) and error.
 func getAggregatedPlacementRules(ctx context.Context, databaseConnectionPool *pgxpool.Pool,
-	placementRuleName string, placementRuleNamespace string) (*v1.PlacementRule, error) {
+	placementRuleName string, placementRuleNamespace string) (*placementrulesv1.PlacementRule, error) {
 	rows, err := databaseConnectionPool.Query(ctx,
 		fmt.Sprintf(`SELECT payload FROM status.%s
 			WHERE payload->'metadata'->>'name'=$1 AND payload->'metadata'->>'namespace'=$2`,
@@ -100,12 +100,12 @@ func getAggregatedPlacementRules(ctx context.Context, databaseConnectionPool *pg
 	defer rows.Close()
 
 	// build an aggregated placement-rule
-	aggregatedPlacementRule := v1.PlacementRule{}
+	aggregatedPlacementRule := placementrulesv1.PlacementRule{}
 	aggregatedPlacementRule.Name = placementRuleName
 	aggregatedPlacementRule.Namespace = placementRuleNamespace
 
 	for rows.Next() {
-		var leafHubPlacementRule v1.PlacementRule
+		var leafHubPlacementRule placementrulesv1.PlacementRule
 
 		if err := rows.Scan(&leafHubPlacementRule); err != nil {
 			return nil, fmt.Errorf("error getting placementrule from DB - %w", err)
@@ -120,8 +120,8 @@ func getAggregatedPlacementRules(ctx context.Context, databaseConnectionPool *pg
 }
 
 func updatePlacementRule(ctx context.Context, k8sClient client.Client,
-	aggregatedPlacementRule *v1.PlacementRule) error {
-	deployedPlacementRule := &v1.PlacementRule{}
+	aggregatedPlacementRule *placementrulesv1.PlacementRule) error {
+	deployedPlacementRule := &placementrulesv1.PlacementRule{}
 
 	err := k8sClient.Get(ctx, client.ObjectKey{
 		Name:      aggregatedPlacementRule.Name,
