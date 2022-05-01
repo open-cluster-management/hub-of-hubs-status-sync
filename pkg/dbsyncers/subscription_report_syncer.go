@@ -19,9 +19,7 @@ import (
 )
 
 const (
-	subscriptionReportsStatusTableName   = "subscription_reports"
-	hubOfHubsAggregatedViewAnnotationKey = "hub-of-hubs.open-cluster-management.io/appsView"
-	hubOfHubsGlobalView                  = "globalView"
+	subscriptionReportsStatusTableName = "subscription_reports"
 )
 
 func addSubscriptionReportDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool,
@@ -74,13 +72,19 @@ func handleSubscriptionReport(ctx context.Context, log logr.Logger, databaseConn
 	subscriptionReport, err := getAggregatedSubscriptionReport(ctx, databaseConnectionPool, subscriptionName,
 		subscriptionNamespace)
 	if err != nil {
-		log.Error(err, "failed to get subscription report", "name", subscriptionName,
+		log.Error(err, "failed to get subscription-report", "name", subscriptionName,
 			"namespace", subscriptionNamespace)
 
 		return
 	}
 
-	if subscriptionReport == nil {
+	if subscriptionReport == nil { // no status resources found in DB
+		if err := cleanK8sResource(ctx, k8sClient, &appsv1alpha1.SubscriptionReport{}, subscriptionName,
+			subscriptionNamespace); err != nil {
+			log.Error(err, "failed to clean subscription-report", "name", subscriptionName,
+				"namespace", subscriptionNamespace)
+		}
+
 		return
 	}
 
@@ -138,9 +142,7 @@ func updateSubscriptionReport(ctx context.Context, k8sClient client.Client,
 		deployedSubscriptionReport)
 	if err != nil {
 		if errors.IsNotFound(err) { // create CR
-			aggregatedSubscriptionReport.ResourceVersion = ""
-
-			if err := k8sClient.Create(ctx, aggregatedSubscriptionReport); err != nil {
+			if err := createK8sResource(ctx, k8sClient, aggregatedSubscriptionReport); err != nil {
 				return fmt.Errorf("failed to create subscription-report {name=%s, namespace=%s} - %w",
 					aggregatedSubscriptionReport.Name, aggregatedSubscriptionReport.Namespace, err)
 			}
@@ -189,7 +191,6 @@ func updateSubscriptionReportObject(subscriptionReport *appsv1alpha1.Subscriptio
 	updatedSummary appsv1alpha1.SubscriptionReportSummary, updatedResults []*appsv1alpha1.SubscriptionReportResult) {
 	// assign annotations
 	subscriptionReport.Annotations = map[string]string{}
-	subscriptionReport.Annotations[hubOfHubsAggregatedViewAnnotationKey] = hubOfHubsGlobalView
 	// assign labels
 	subscriptionReport.Labels = map[string]string{}
 	subscriptionReport.Labels[appsv1.AnnotationHosting] = fmt.Sprintf("%s.%s",

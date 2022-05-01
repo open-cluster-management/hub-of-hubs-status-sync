@@ -74,7 +74,7 @@ func handlePlacementStatus(ctx context.Context, log logr.Logger, databaseConnect
 		return
 	}
 
-	if placement == nil {
+	if placement == nil { // no status resources found in DB - placement is never created here
 		return
 	}
 

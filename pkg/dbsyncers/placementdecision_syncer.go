@@ -78,7 +78,13 @@ func handlePlacementDecision(ctx context.Context, log logr.Logger, databaseConne
 		return
 	}
 
-	if placementDecision == nil {
+	if placementDecision == nil { // no status resources found in DB
+		if err := cleanK8sResource(ctx, k8sClient, &clustersv1beta1.PlacementDecision{},
+			fmt.Sprintf("%s-1", placementName), placementNamespace); err != nil {
+			log.Error(err, "failed to clean placement-decision", "name", placementName,
+				"namespace", placementNamespace)
+		}
+
 		return
 	}
 
@@ -139,8 +145,8 @@ func updatePlacementDecision(ctx context.Context, k8sClient client.Client,
 	},
 		deployedPlacementDecision)
 	if err != nil {
-		if errors.IsNotFound(err) { // CR getting deleted
-			if err := k8sClient.Create(ctx, aggregatedPlacementDecision); err != nil {
+		if errors.IsNotFound(err) {
+			if err := createK8sResource(ctx, k8sClient, aggregatedPlacementDecision); err != nil {
 				return fmt.Errorf("failed to create placement-decision {name=%s, namespace=%s} - %w",
 					aggregatedPlacementDecision.Name, aggregatedPlacementDecision.Namespace, err)
 			}

@@ -77,7 +77,7 @@ func handlePlacementRuleStatus(ctx context.Context, log logr.Logger, databaseCon
 		return
 	}
 
-	if placementRule == nil {
+	if placementRule == nil { // no status resources found in DB - placementrule is never created here
 		return
 	}
 

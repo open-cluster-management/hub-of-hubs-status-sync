@@ -78,7 +78,13 @@ func handleSubscriptionStatus(ctx context.Context, log logr.Logger, databaseConn
 		return
 	}
 
-	if subscriptionStatus == nil {
+	if subscriptionStatus == nil { // no status resources found in DB
+		if err := cleanK8sResource(ctx, k8sClient, &appsv1alpha1.SubscriptionStatus{}, subscriptionName,
+			subscriptionNamespace); err != nil {
+			log.Error(err, "failed to clean subscription-status", "name", subscriptionName,
+				"namespace", subscriptionNamespace)
+		}
+
 		return
 	}
 
@@ -133,9 +139,7 @@ func updateSubscriptionStatus(ctx context.Context, k8sClient client.Client,
 		deployedSubscriptionStatus)
 	if err != nil {
 		if errors.IsNotFound(err) { // create CR
-			aggregatedSubscriptionStatus.ResourceVersion = ""
-
-			if err := k8sClient.Create(ctx, aggregatedSubscriptionStatus); err != nil {
+			if err := createK8sResource(ctx, k8sClient, aggregatedSubscriptionStatus); err != nil {
 				return fmt.Errorf("failed to create subscription-status {name=%s, namespace=%s} - %w",
 					aggregatedSubscriptionStatus.Name, aggregatedSubscriptionStatus.Namespace, err)
 			}
@@ -165,7 +169,6 @@ func updateSubscriptionStatusObject(subscriptionStatus *appsv1alpha1.Subscriptio
 	statuses appsv1alpha1.SubscriptionClusterStatusMap) {
 	// assign annotations
 	subscriptionStatus.Annotations = map[string]string{}
-	subscriptionStatus.Annotations[hubOfHubsAggregatedViewAnnotationKey] = hubOfHubsGlobalView
 	// assign labels
 	subscriptionStatus.Labels = map[string]string{}
 	subscriptionStatus.Labels[appsv1.AnnotationHosting] = fmt.Sprintf("%s.%s",
