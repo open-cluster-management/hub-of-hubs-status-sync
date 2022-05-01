@@ -22,7 +22,6 @@ const (
 
 	policiesSpecTableName     = "policies"
 	complianceStatusTableName = "compliance"
-	placementStatusTableName  = "policies_placement"
 )
 
 func addPolicyDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool, syncInterval time.Duration) error {
@@ -90,22 +89,16 @@ func handlePolicy(ctx context.Context, log logr.Logger, databaseConnectionPool *
 		return
 	}
 
-	placementStatus, err := getPlacementStatus(ctx, databaseConnectionPool, policy)
-	if err != nil {
-		log.Error(err, "failed to get placement status of a policy", "uid", policy.GetUID())
-		return
-	}
-
 	if err = updateComplianceStatus(ctx, k8sClient, policy, compliancePerClusterStatuses,
-		hasNonCompliantClusters, placementStatus); err != nil {
+		hasNonCompliantClusters); err != nil {
 		log.Error(err, "failed to update policy status")
 	}
 }
 
 // returns array of CompliancePerClusterStatus, whether the policy has any NonCompliant cluster, and error.
 func getComplianceStatus(ctx context.Context, databaseConnectionPool *pgxpool.Pool,
-	dbEnumToPolicyComplianceStateMap map[string]policiesv1.ComplianceState, policy *policiesv1.Policy,
-) ([]*policiesv1.CompliancePerClusterStatus, bool, error) {
+	dbEnumToPolicyComplianceStateMap map[string]policiesv1.ComplianceState, 
+	policy *policiesv1.Policy) ([]*policiesv1.CompliancePerClusterStatus, bool, error) {
 	rows, err := databaseConnectionPool.Query(ctx,
 		fmt.Sprintf(`SELECT cluster_name,leaf_hub_name,compliance FROM status.%s
 			WHERE id=$1 ORDER BY leaf_hub_name, cluster_name`, complianceStatusTableName), string(policy.GetUID()))
@@ -142,21 +135,9 @@ func getComplianceStatus(ctx context.Context, databaseConnectionPool *pgxpool.Po
 	return compliancePerClusterStatuses, hasNonCompliantClusters, nil
 }
 
-func getPlacementStatus(ctx context.Context, databaseConnectionPool *pgxpool.Pool,
-	policy *policiesv1.Policy) ([]*policiesv1.Placement, error) {
-	var placement []*policiesv1.Placement
-
-	if err := databaseConnectionPool.QueryRow(ctx, fmt.Sprintf(`SELECT placement FROM status.%s
-			WHERE id=$1`, placementStatusTableName), string(policy.GetUID())).Scan(&placement); err != nil {
-		return []*policiesv1.Placement{}, fmt.Errorf("failed to read placement from database: %w", err)
-	}
-
-	return placement, nil
-}
-
 func updateComplianceStatus(ctx context.Context, k8sClient client.StatusClient, policy *policiesv1.Policy,
-	compliancePerClusterStatuses []*policiesv1.CompliancePerClusterStatus, hasNonCompliantClusters bool,
-	placementStatus []*policiesv1.Placement) error {
+	compliancePerClusterStatuses []*policiesv1.CompliancePerClusterStatus, 
+	hasNonCompliantClusters bool) error {
 	originalPolicy := policy.DeepCopy()
 
 	policy.Status.Status = compliancePerClusterStatuses
@@ -167,8 +148,6 @@ func updateComplianceStatus(ctx context.Context, k8sClient client.StatusClient, 
 	} else if len(compliancePerClusterStatuses) > 0 {
 		policy.Status.ComplianceState = policiesv1.Compliant
 	}
-
-	policy.Status.Placement = placementStatus
 
 	err := k8sClient.Status().Patch(ctx, policy, client.MergeFrom(originalPolicy))
 	if err != nil && !errors.IsNotFound(err) {
