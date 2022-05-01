@@ -20,6 +20,7 @@ import (
 const (
 	placementDecisionsSpecTableName   = "placements"
 	placementDecisionsStatusTableName = "placementdecisions"
+	placementDecisionNameExtension    = "-decision-1"
 )
 
 func addPlacementDecisionDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool,
@@ -80,7 +81,7 @@ func handlePlacementDecision(ctx context.Context, log logr.Logger, databaseConne
 
 	if placementDecision == nil { // no status resources found in DB
 		if err := cleanK8sResource(ctx, k8sClient, &clustersv1beta1.PlacementDecision{},
-			fmt.Sprintf("%s-1", placementName), placementNamespace); err != nil {
+			fmt.Sprintf("%s%s", placementName, placementDecisionNameExtension), placementNamespace); err != nil {
 			log.Error(err, "failed to clean placement-decision", "name", placementName,
 				"namespace", placementNamespace)
 		}

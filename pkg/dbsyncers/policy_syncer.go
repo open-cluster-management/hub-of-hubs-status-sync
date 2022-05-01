@@ -97,7 +97,7 @@ func handlePolicy(ctx context.Context, log logr.Logger, databaseConnectionPool *
 
 // returns array of CompliancePerClusterStatus, whether the policy has any NonCompliant cluster, and error.
 func getComplianceStatus(ctx context.Context, databaseConnectionPool *pgxpool.Pool,
-	dbEnumToPolicyComplianceStateMap map[string]policiesv1.ComplianceState, 
+	dbEnumToPolicyComplianceStateMap map[string]policiesv1.ComplianceState,
 	policy *policiesv1.Policy) ([]*policiesv1.CompliancePerClusterStatus, bool, error) {
 	rows, err := databaseConnectionPool.Query(ctx,
 		fmt.Sprintf(`SELECT cluster_name,leaf_hub_name,compliance FROM status.%s
@@ -136,7 +136,7 @@ func getComplianceStatus(ctx context.Context, databaseConnectionPool *pgxpool.Po
 }
 
 func updateComplianceStatus(ctx context.Context, k8sClient client.StatusClient, policy *policiesv1.Policy,
-	compliancePerClusterStatuses []*policiesv1.CompliancePerClusterStatus, 
+	compliancePerClusterStatuses []*policiesv1.CompliancePerClusterStatus,
 	hasNonCompliantClusters bool) error {
 	originalPolicy := policy.DeepCopy()
 
