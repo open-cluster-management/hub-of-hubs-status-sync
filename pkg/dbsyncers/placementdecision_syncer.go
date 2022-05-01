@@ -18,7 +18,6 @@ import (
 )
 
 const (
-	placementDecisionsSpecTableName   = "placements"
 	placementDecisionsStatusTableName = "placementdecisions"
 	placementDecisionNameExtension    = "-decision-1"
 )
@@ -47,7 +46,7 @@ func syncPlacementDecisions(ctx context.Context, log logr.Logger, databaseConnec
 
 	rows, err := databaseConnectionPool.Query(ctx,
 		fmt.Sprintf(`SELECT payload->'metadata'->>'name', payload->'metadata'->>'namespace' 
-		FROM spec.%s WHERE deleted = FALSE`, placementDecisionsSpecTableName))
+		FROM spec.%s WHERE deleted = FALSE`, placementsSpecTableName))
 	if err != nil {
 		log.Error(err, "error in getting placement spec")
 		return
@@ -58,7 +57,7 @@ func syncPlacementDecisions(ctx context.Context, log logr.Logger, databaseConnec
 
 		err := rows.Scan(&name, &namespace)
 		if err != nil {
-			log.Error(err, "error in select", "table", placementDecisionsSpecTableName)
+			log.Error(err, "error in select", "table", placementsSpecTableName)
 			continue
 		}
 
@@ -90,7 +89,7 @@ func handlePlacementDecision(ctx context.Context, log logr.Logger, databaseConne
 	}
 
 	if err := updatePlacementDecision(ctx, k8sClient, placementDecision); err != nil {
-		log.Error(err, "failed to update placement status")
+		log.Error(err, "failed to update placement-decision")
 	}
 }
 
@@ -143,8 +142,7 @@ func updatePlacementDecision(ctx context.Context, k8sClient client.Client,
 	err := k8sClient.Get(ctx, client.ObjectKey{
 		Name:      aggregatedPlacementDecision.Name,
 		Namespace: aggregatedPlacementDecision.Namespace,
-	},
-		deployedPlacementDecision)
+	}, deployedPlacementDecision)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			if err := createK8sResource(ctx, k8sClient, aggregatedPlacementDecision); err != nil {

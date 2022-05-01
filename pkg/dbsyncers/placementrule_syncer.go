@@ -68,83 +68,82 @@ func handlePlacementRuleStatus(ctx context.Context, log logr.Logger, databaseCon
 	k8sClient client.Client, placementRuleName string, placementRuleNamespace string) {
 	log.Info("handling a placementrule", "name", placementRuleName, "namespace", placementRuleNamespace)
 
-	placementRule, err := getAggregatedPlacementRules(ctx, databaseConnectionPool, placementRuleName,
-		placementRuleNamespace)
+	placementRuleStatus, statusEntriesFound, err := getPlacementRuleStatus(ctx, databaseConnectionPool,
+		placementRuleName, placementRuleNamespace)
 	if err != nil {
-		log.Error(err, "failed to get aggregated placementrule", "name", placementRuleName,
+		log.Error(err, "failed to get placementrule status", "name", placementRuleName,
 			"namespace", placementRuleNamespace)
 
 		return
 	}
 
-	if placementRule == nil { // no status resources found in DB - placementrule is never created here
+	if !statusEntriesFound { // no status resources found in DB - placementrule is never created here
 		return
 	}
 
-	if err := updatePlacementRule(ctx, k8sClient, placementRule); err != nil {
+	if err := updatePlacementRuleStatus(ctx, k8sClient, placementRuleName, placementRuleNamespace,
+		placementRuleStatus); err != nil {
 		log.Error(err, "failed to update placementrule status")
 	}
 }
 
-// returns aggregated PlacementRule (status) and error.
-func getAggregatedPlacementRules(ctx context.Context, databaseConnectionPool *pgxpool.Pool,
-	placementRuleName string, placementRuleNamespace string) (*placementrulesv1.PlacementRule, error) {
+// returns aggregated PlacementRuleStatus.
+func getPlacementRuleStatus(ctx context.Context, databaseConnectionPool *pgxpool.Pool,
+	placementRuleName string, placementRuleNamespace string) (*placementrulesv1.PlacementRuleStatus, bool, error) {
 	rows, err := databaseConnectionPool.Query(ctx,
 		fmt.Sprintf(`SELECT payload FROM status.%s
 			WHERE payload->'metadata'->>'name'=$1 AND payload->'metadata'->>'namespace'=$2`,
 			placementrRulesStatusTableName), placementRuleName, placementRuleNamespace)
 	if err != nil {
-		return nil, fmt.Errorf("error in getting placementrules from DB - %w", err)
+		return nil, false, fmt.Errorf("error in getting placementrules from DB - %w", err)
 	}
 
 	defer rows.Close()
 
 	// build an aggregated placement-rule
-	var aggregatedPlacementRule *placementrulesv1.PlacementRule
+	placementRuleStatus := &placementrulesv1.PlacementRuleStatus{}
+	statusEntriesFound := false
 
 	for rows.Next() {
 		var leafHubPlacementRule placementrulesv1.PlacementRule
 
 		if err := rows.Scan(&leafHubPlacementRule); err != nil {
-			return nil, fmt.Errorf("error getting placementrule from DB - %w", err)
+			return nil, false, fmt.Errorf("error getting placementrule from DB - %w", err)
 		}
 
-		if aggregatedPlacementRule == nil {
-			aggregatedPlacementRule = &placementrulesv1.PlacementRule{}
-			aggregatedPlacementRule.Name = placementRuleName
-			aggregatedPlacementRule.Namespace = placementRuleNamespace
+		if !statusEntriesFound {
+			statusEntriesFound = true
 		}
 
 		// assuming that cluster names are unique across the hubs, all we need to do is a complete merge
-		aggregatedPlacementRule.Status.Decisions = append(aggregatedPlacementRule.Status.Decisions,
+		placementRuleStatus.Decisions = append(placementRuleStatus.Decisions,
 			leafHubPlacementRule.Status.Decisions...)
 	}
 
-	return aggregatedPlacementRule, nil
+	return placementRuleStatus, statusEntriesFound, nil
 }
 
-func updatePlacementRule(ctx context.Context, k8sClient client.Client,
-	aggregatedPlacementRule *placementrulesv1.PlacementRule) error {
+func updatePlacementRuleStatus(ctx context.Context, k8sClient client.Client, placementRuleName string,
+	placementRuleNamespace string, placementRuleStatus *placementrulesv1.PlacementRuleStatus) error {
 	deployedPlacementRule := &placementrulesv1.PlacementRule{}
 
 	err := k8sClient.Get(ctx, client.ObjectKey{
-		Name:      aggregatedPlacementRule.Name,
-		Namespace: aggregatedPlacementRule.Namespace,
-	},
-		deployedPlacementRule)
+		Name:      placementRuleName,
+		Namespace: placementRuleNamespace,
+	}, deployedPlacementRule)
 	if err != nil {
 		if errors.IsNotFound(err) { // CR getting deleted
 			return nil
 		}
 
 		return fmt.Errorf("failed to get placementrule {name=%s, namespace=%s} - %w",
-			aggregatedPlacementRule.Name, aggregatedPlacementRule.Namespace, err)
+			placementRuleName, placementRuleNamespace, err)
 	}
 
 	// if object exists, clone and update
 	originalPlacementRule := deployedPlacementRule.DeepCopy()
 
-	deployedPlacementRule.Status = aggregatedPlacementRule.Status
+	deployedPlacementRule.Status = *placementRuleStatus
 
 	err = k8sClient.Status().Patch(ctx, deployedPlacementRule, client.MergeFrom(originalPlacementRule))
 	if err != nil && !errors.IsNotFound(err) {

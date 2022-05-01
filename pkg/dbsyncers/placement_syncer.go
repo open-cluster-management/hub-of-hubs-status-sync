@@ -68,79 +68,78 @@ func handlePlacementStatus(ctx context.Context, log logr.Logger, databaseConnect
 	k8sClient client.Client, placementName string, placementNamespace string) {
 	log.Info("handling a placement", "name", placementName, "namespace", placementNamespace)
 
-	placement, err := getAggregatedPlacements(ctx, databaseConnectionPool, placementName, placementNamespace)
+	placementStatus, statusEntriesFound, err := getPlacementStatus(ctx, databaseConnectionPool,
+		placementName, placementNamespace)
 	if err != nil {
 		log.Error(err, "failed to get aggregated placement", "name", placementName, "namespace", placementNamespace)
 		return
 	}
 
-	if placement == nil { // no status resources found in DB - placement is never created here
+	if !statusEntriesFound { // no status resources found in DB - placement is never created here
 		return
 	}
 
-	if err := updatePlacement(ctx, k8sClient, placement); err != nil {
+	if err := updatePlacementStatus(ctx, k8sClient, placementName, placementNamespace, placementStatus); err != nil {
 		log.Error(err, "failed to update placement status")
 	}
 }
 
-// returns aggregated Placement (statuses) and error.
-func getAggregatedPlacements(ctx context.Context, databaseConnectionPool *pgxpool.Pool,
-	placementName string, placementNamespace string) (*clustersv1beta1.Placement, error) {
+// returns aggregated PlacementStatus and error.
+func getPlacementStatus(ctx context.Context, databaseConnectionPool *pgxpool.Pool,
+	placementName string, placementNamespace string) (*clustersv1beta1.PlacementStatus, bool, error) {
 	rows, err := databaseConnectionPool.Query(ctx,
 		fmt.Sprintf(`SELECT payload FROM status.%s
 			WHERE payload->'metadata'->>'name'=$1 AND payload->'metadata'->>'namespace'=$2`,
 			placementsStatusTableName), placementName, placementNamespace)
 	if err != nil {
-		return nil, fmt.Errorf("error in getting placements from DB - %w", err)
+		return nil, false, fmt.Errorf("error in getting placements from DB - %w", err)
 	}
 
 	defer rows.Close()
 
 	// build an aggregated placement
-	var aggregatedPlacement *clustersv1beta1.Placement
+	placementStatus := clustersv1beta1.PlacementStatus{}
+	statusEntriesFound := false
 
 	for rows.Next() {
 		var leafHubPlacement clustersv1beta1.Placement
 
 		if err := rows.Scan(&leafHubPlacement); err != nil {
-			return nil, fmt.Errorf("error getting placement from DB - %w", err)
+			return nil, false, fmt.Errorf("error getting placement from DB - %w", err)
 		}
 
-		if aggregatedPlacement == nil {
-			aggregatedPlacement = &clustersv1beta1.Placement{}
-			aggregatedPlacement.Name = placementName
-			aggregatedPlacement.Namespace = placementNamespace
+		if !statusEntriesFound {
+			statusEntriesFound = true
 		}
 
 		// assuming that cluster names are unique across the hubs, all we need to do is a complete merge
-		aggregatedPlacement.Status.NumberOfSelectedClusters += leafHubPlacement.Status.NumberOfSelectedClusters
+		placementStatus.NumberOfSelectedClusters += leafHubPlacement.Status.NumberOfSelectedClusters
 	}
 
-	return aggregatedPlacement, nil
+	return &placementStatus, statusEntriesFound, nil
 }
 
-func updatePlacement(ctx context.Context, k8sClient client.Client,
-	aggregatedPlacement *clustersv1beta1.Placement) error {
+func updatePlacementStatus(ctx context.Context, k8sClient client.Client,
+	placementName string, placementNamespace string, placementStatus *clustersv1beta1.PlacementStatus) error {
 	deployedPlacement := &clustersv1beta1.Placement{}
 
 	err := k8sClient.Get(ctx, client.ObjectKey{
-		Name:      aggregatedPlacement.Name,
-		Namespace: aggregatedPlacement.Namespace,
-	},
-		deployedPlacement)
+		Name:      placementName,
+		Namespace: placementNamespace,
+	}, deployedPlacement)
 	if err != nil {
 		if errors.IsNotFound(err) { // CR getting deleted
 			return nil
 		}
 
 		return fmt.Errorf("failed to get placement {name=%s, namespace=%s} - %w",
-			aggregatedPlacement.Name, aggregatedPlacement.Namespace, err)
+			placementName, placementNamespace, err)
 	}
 
 	// if object exists, clone and update
 	originalPlacement := deployedPlacement.DeepCopy()
 
-	deployedPlacement.Status.NumberOfSelectedClusters = aggregatedPlacement.Status.NumberOfSelectedClusters
+	deployedPlacement.Status.NumberOfSelectedClusters = placementStatus.NumberOfSelectedClusters
 
 	err = k8sClient.Status().Patch(ctx, deployedPlacement, client.MergeFrom(originalPlacement))
 	if err != nil && !errors.IsNotFound(err) {

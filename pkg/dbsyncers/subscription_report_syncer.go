@@ -138,8 +138,7 @@ func updateSubscriptionReport(ctx context.Context, k8sClient client.Client,
 	err := k8sClient.Get(ctx, client.ObjectKey{
 		Name:      aggregatedSubscriptionReport.Name,
 		Namespace: aggregatedSubscriptionReport.Namespace,
-	},
-		deployedSubscriptionReport)
+	}, deployedSubscriptionReport)
 	if err != nil {
 		if errors.IsNotFound(err) { // create CR
 			if err := createK8sResource(ctx, k8sClient, aggregatedSubscriptionReport); err != nil {

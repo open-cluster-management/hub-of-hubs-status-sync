@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	subscriptionsSpecTableName          = "subscriptions"
-	subscriptionStatusesStatusTableName = "subscription_statuses"
+	subscriptionsSpecTableName    = "subscriptions"
+	subscriptionStatusesTableName = "subscription_statuses"
 )
 
 func addSubscriptionStatusStatusDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool,
@@ -99,7 +99,7 @@ func getAggregatedSubscriptionStatuses(ctx context.Context, databaseConnectionPo
 	rows, err := databaseConnectionPool.Query(ctx,
 		fmt.Sprintf(`SELECT payload FROM status.%s
 			WHERE payload->'metadata'->>'name'=$1 AND payload->'metadata'->>'namespace'=$2`,
-			subscriptionStatusesStatusTableName), subscriptionName, subscriptionNamespace)
+			subscriptionStatusesTableName), subscriptionName, subscriptionNamespace)
 	if err != nil {
 		return nil, fmt.Errorf("error in getting subscription-statuses from DB - %w", err)
 	}
@@ -135,8 +135,7 @@ func updateSubscriptionStatus(ctx context.Context, k8sClient client.Client,
 	err := k8sClient.Get(ctx, client.ObjectKey{
 		Name:      aggregatedSubscriptionStatus.Name,
 		Namespace: aggregatedSubscriptionStatus.Namespace,
-	},
-		deployedSubscriptionStatus)
+	}, deployedSubscriptionStatus)
 	if err != nil {
 		if errors.IsNotFound(err) { // create CR
 			if err := createK8sResource(ctx, k8sClient, aggregatedSubscriptionStatus); err != nil {
