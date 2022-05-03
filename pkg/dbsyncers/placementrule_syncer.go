@@ -111,9 +111,7 @@ func getPlacementRuleStatus(ctx context.Context, databaseConnectionPool *pgxpool
 			return nil, false, fmt.Errorf("error getting placementrule from DB - %w", err)
 		}
 
-		if !statusEntriesFound {
-			statusEntriesFound = true
-		}
+		statusEntriesFound = true
 
 		// assuming that cluster names are unique across the hubs, all we need to do is a complete merge
 		placementRuleStatus.Decisions = append(placementRuleStatus.Decisions,

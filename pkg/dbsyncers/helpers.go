@@ -24,15 +24,6 @@ func createK8sResource(ctx context.Context, k8sClient client.Client, resource cl
 	// make sure resource version is empty - otherwise cannot create
 	resource.SetResourceVersion("")
 
-	// set annotation so that resource can be identified and deleted if needed
-	annotations := resource.GetAnnotations()
-	if annotations == nil {
-		annotations = map[string]string{}
-	}
-
-	annotations[hubOfHubsStatusResourceAnnotation] = ""
-	resource.SetAnnotations(annotations)
-
 	if err := k8sClient.Create(ctx, resource); err != nil {
 		return fmt.Errorf("failed to create k8s-resource - %w", err)
 	}

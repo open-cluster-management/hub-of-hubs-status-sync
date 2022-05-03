@@ -103,9 +103,7 @@ func getPlacementStatus(ctx context.Context, databaseConnectionPool *pgxpool.Poo
 			return nil, false, fmt.Errorf("error getting placement from DB - %w", err)
 		}
 
-		if !statusEntriesFound {
-			statusEntriesFound = true
-		}
+		statusEntriesFound = true
 
 		// assuming that cluster names are unique across the hubs, all we need to do is a complete merge
 		placementStatus.NumberOfSelectedClusters += leafHubPlacement.Status.NumberOfSelectedClusters
