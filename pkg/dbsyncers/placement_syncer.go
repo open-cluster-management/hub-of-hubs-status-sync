@@ -16,11 +16,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	placementsSpecTableName   = "placements"
-	placementsStatusTableName = "placements"
-)
-
 func addPlacementStatusDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool,
 	syncInterval time.Duration) error {
 	err := mgr.Add(&genericDBSyncer{

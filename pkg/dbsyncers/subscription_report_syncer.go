@@ -18,10 +18,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	subscriptionReportsStatusTableName = "subscription_reports"
-)
-
 func addSubscriptionReportDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool,
 	syncInterval time.Duration) error {
 	err := mgr.Add(&genericDBSyncer{
@@ -45,7 +41,7 @@ func syncSubscriptionReports(ctx context.Context, log logr.Logger, databaseConne
 	log.Info("performing sync of subscription-report")
 
 	rows, err := databaseConnectionPool.Query(ctx,
-		fmt.Sprintf(`SELECT payload->'metadata'->>'name', payload->'metadata'->>'namespace' 
+		fmt.Sprintf(`SELECT id, payload->'metadata'->>'name', payload->'metadata'->>'namespace' 
 		FROM spec.%s WHERE deleted = FALSE`, subscriptionsSpecTableName))
 	if err != nil {
 		log.Error(err, "error in getting subscriptions spec")
@@ -53,20 +49,20 @@ func syncSubscriptionReports(ctx context.Context, log logr.Logger, databaseConne
 	}
 
 	for rows.Next() {
-		var name, namespace string
+		var uid, name, namespace string
 
-		err := rows.Scan(&name, &namespace)
+		err := rows.Scan(&uid, &name, &namespace)
 		if err != nil {
 			log.Error(err, "error in select", "table", subscriptionsSpecTableName)
 			continue
 		}
 
-		go handleSubscriptionReport(ctx, log, databaseConnectionPool, k8sClient, name, namespace)
+		go handleSubscriptionReport(ctx, log, databaseConnectionPool, k8sClient, uid, name, namespace)
 	}
 }
 
 func handleSubscriptionReport(ctx context.Context, log logr.Logger, databaseConnectionPool *pgxpool.Pool,
-	k8sClient client.Client, subscriptionName string, subscriptionNamespace string) {
+	k8sClient client.Client, specSubscriptionUID string, subscriptionName string, subscriptionNamespace string) {
 	log.Info("handling a subscription", "name", subscriptionName, "namespace", subscriptionNamespace)
 
 	subscriptionReport, err := getAggregatedSubscriptionReport(ctx, databaseConnectionPool, subscriptionName,
@@ -79,14 +75,11 @@ func handleSubscriptionReport(ctx context.Context, log logr.Logger, databaseConn
 	}
 
 	if subscriptionReport == nil { // no status resources found in DB
-		if err := cleanK8sResource(ctx, k8sClient, &appsv1alpha1.SubscriptionReport{}, subscriptionName,
-			subscriptionNamespace); err != nil {
-			log.Error(err, "failed to clean subscription-report", "name", subscriptionName,
-				"namespace", subscriptionNamespace)
-		}
-
 		return
 	}
+
+	// set owner-reference so that the subscription-report is deleted when the subscription is
+	setOwnerReference(subscriptionReport, createSubscriptionOwnerReference(subscriptionName, specSubscriptionUID))
 
 	if err := updateSubscriptionReport(ctx, k8sClient, subscriptionReport); err != nil {
 		log.Error(err, "failed to update subscription-report status")
@@ -170,20 +163,15 @@ func updateSubscriptionReport(ctx context.Context, k8sClient client.Client,
 
 func updateSubscriptionReportSummary(aggregatedSummary *appsv1alpha1.SubscriptionReportSummary,
 	reportSummary *appsv1alpha1.SubscriptionReportSummary) {
-	aggregatedSummary.Deployed = strconv.Itoa(stringToInt(aggregatedSummary.Deployed) +
-		stringToInt(reportSummary.Deployed))
+	aggregatedSummary.Deployed = add(aggregatedSummary.Deployed, reportSummary.Deployed)
 
-	aggregatedSummary.InProgress = strconv.Itoa(stringToInt(aggregatedSummary.InProgress) +
-		stringToInt(reportSummary.InProgress))
+	aggregatedSummary.InProgress = add(aggregatedSummary.InProgress, reportSummary.InProgress)
 
-	aggregatedSummary.Failed = strconv.Itoa(stringToInt(aggregatedSummary.Failed) +
-		stringToInt(reportSummary.Failed))
+	aggregatedSummary.Failed = add(aggregatedSummary.Failed, reportSummary.Failed)
 
-	aggregatedSummary.PropagationFailed = strconv.Itoa(stringToInt(aggregatedSummary.PropagationFailed) +
-		stringToInt(reportSummary.PropagationFailed))
+	aggregatedSummary.PropagationFailed = add(aggregatedSummary.PropagationFailed, reportSummary.PropagationFailed)
 
-	aggregatedSummary.Clusters = strconv.Itoa(stringToInt(aggregatedSummary.Clusters) +
-		stringToInt(reportSummary.Clusters))
+	aggregatedSummary.Clusters = add(aggregatedSummary.Clusters, reportSummary.Clusters)
 }
 
 func updateSubscriptionReportObject(subscriptionReport *appsv1alpha1.SubscriptionReport,
@@ -198,6 +186,10 @@ func updateSubscriptionReportObject(subscriptionReport *appsv1alpha1.Subscriptio
 	subscriptionReport.Summary = updatedSummary
 	// reset results
 	subscriptionReport.Results = updatedResults
+}
+
+func add(number1 string, number2 string) string {
+	return strconv.Itoa(stringToInt(number1) + stringToInt(number2))
 }
 
 func stringToInt(numberString string) int {

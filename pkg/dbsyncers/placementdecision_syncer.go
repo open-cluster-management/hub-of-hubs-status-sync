@@ -11,15 +11,9 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"k8s.io/apimachinery/pkg/api/errors"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clustersv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-)
-
-const (
-	placementDecisionsStatusTableName = "placementdecisions"
-	placementDecisionNameExtension    = "-decision-1"
 )
 
 func addPlacementDecisionDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool,
@@ -45,7 +39,7 @@ func syncPlacementDecisions(ctx context.Context, log logr.Logger, databaseConnec
 	log.Info("performing sync of placement-decision")
 
 	rows, err := databaseConnectionPool.Query(ctx,
-		fmt.Sprintf(`SELECT payload->'metadata'->>'name', payload->'metadata'->>'namespace' 
+		fmt.Sprintf(`SELECT id, payload->'metadata'->>'name', payload->'metadata'->>'namespace' 
 		FROM spec.%s WHERE deleted = FALSE`, placementsSpecTableName))
 	if err != nil {
 		log.Error(err, "error in getting placement spec")
@@ -53,20 +47,20 @@ func syncPlacementDecisions(ctx context.Context, log logr.Logger, databaseConnec
 	}
 
 	for rows.Next() {
-		var name, namespace string
+		var uid, name, namespace string
 
-		err := rows.Scan(&name, &namespace)
+		err := rows.Scan(&uid, &name, &namespace)
 		if err != nil {
 			log.Error(err, "error in select", "table", placementsSpecTableName)
 			continue
 		}
 
-		go handlePlacementDecision(ctx, log, databaseConnectionPool, k8sClient, name, namespace)
+		go handlePlacementDecision(ctx, log, databaseConnectionPool, k8sClient, uid, name, namespace)
 	}
 }
 
 func handlePlacementDecision(ctx context.Context, log logr.Logger, databaseConnectionPool *pgxpool.Pool,
-	k8sClient client.Client, placementName string, placementNamespace string) {
+	k8sClient client.Client, specPlacementUID string, placementName string, placementNamespace string) {
 	log.Info("handling a placement", "name", placementName, "namespace", placementNamespace)
 
 	placementDecision, err := getAggregatedPlacementDecisions(ctx, databaseConnectionPool, placementName,
@@ -78,15 +72,12 @@ func handlePlacementDecision(ctx context.Context, log logr.Logger, databaseConne
 		return
 	}
 
-	if placementDecision == nil { // no status resources found in DB
-		if err := cleanK8sResource(ctx, k8sClient, &clustersv1beta1.PlacementDecision{},
-			fmt.Sprintf("%s%s", placementName, placementDecisionNameExtension), placementNamespace); err != nil {
-			log.Error(err, "failed to clean placement-decision", "name", placementName,
-				"namespace", placementNamespace)
-		}
-
+	if placementDecision == nil { // no status resources found in DB - if deleted then k8s handles it by owner-reference
 		return
 	}
+
+	// set owner-reference so that the placement-decision is deleted when the placement is
+	setOwnerReference(placementDecision, createPlacementOwnerReference(placementName, specPlacementUID))
 
 	if err := updatePlacementDecision(ctx, k8sClient, placementDecision); err != nil {
 		log.Error(err, "failed to update placement-decision")
@@ -95,11 +86,11 @@ func handlePlacementDecision(ctx context.Context, log logr.Logger, databaseConne
 
 // returns aggregated PlacementDecision and error.
 func getAggregatedPlacementDecisions(ctx context.Context, databaseConnectionPool *pgxpool.Pool,
-	placementDecisionName string, placementDecisionNamespace string) (*clustersv1beta1.PlacementDecision, error) {
+	placementName string, placementNamespace string) (*clustersv1beta1.PlacementDecision, error) {
 	rows, err := databaseConnectionPool.Query(ctx,
 		fmt.Sprintf(`SELECT payload FROM status.%s
 			WHERE payload->'metadata'->>'name' like $1 AND payload->'metadata'->>'namespace'=$2`,
-			placementDecisionsStatusTableName), fmt.Sprintf("%s%%", placementDecisionName), placementDecisionNamespace)
+			placementDecisionsStatusTableName), fmt.Sprintf("%s%%", placementName), placementNamespace)
 	if err != nil {
 		return nil, fmt.Errorf("error in getting placement-decisions from DB - %w", err)
 	}
@@ -116,14 +107,12 @@ func getAggregatedPlacementDecisions(ctx context.Context, databaseConnectionPool
 			return nil, fmt.Errorf("error getting placement-decision from DB - %w", err)
 		}
 
-		if leafHubPlacementDecision.Labels[clustersv1beta1.PlacementLabel] != placementDecisionName {
+		if leafHubPlacementDecision.Labels[clustersv1beta1.PlacementLabel] != placementName {
 			continue // could be a PlacementDecision generated for a PlacementRule.
 		}
 
 		if aggregatedPlacementDecision == nil {
 			aggregatedPlacementDecision = leafHubPlacementDecision.DeepCopy()
-			aggregatedPlacementDecision.OwnerReferences = []v1.OwnerReference{} // reset owner reference
-
 			continue
 		}
 

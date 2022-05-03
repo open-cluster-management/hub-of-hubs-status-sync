@@ -76,6 +76,7 @@ rules:
   - subscriptionstatuses/status
   - subscriptionreports
   - subscriptionreports/status
+  - subscriptions/finalizers
   verbs:
   - create
   - get
@@ -88,6 +89,7 @@ rules:
   - "cluster.open-cluster-management.io"
   resources:
   - placements
+  - placements/finalizers
   - placements/status
   - placementdecisions
   - placementdecisions/status

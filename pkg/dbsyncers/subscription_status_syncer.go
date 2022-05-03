@@ -17,11 +17,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	subscriptionsSpecTableName    = "subscriptions"
-	subscriptionStatusesTableName = "subscription_statuses"
-)
-
 func addSubscriptionStatusStatusDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool,
 	syncInterval time.Duration) error {
 	err := mgr.Add(&genericDBSyncer{
@@ -45,7 +40,7 @@ func syncSubscriptionStatuses(ctx context.Context, log logr.Logger, databaseConn
 	log.Info("performing sync of subscription-status")
 
 	rows, err := databaseConnectionPool.Query(ctx,
-		fmt.Sprintf(`SELECT payload->'metadata'->>'name', payload->'metadata'->>'namespace' 
+		fmt.Sprintf(`SELECT id, payload->'metadata'->>'name', payload->'metadata'->>'namespace' 
 		FROM spec.%s WHERE deleted = FALSE`, subscriptionsSpecTableName))
 	if err != nil {
 		log.Error(err, "error in getting subscriptions spec")
@@ -53,20 +48,20 @@ func syncSubscriptionStatuses(ctx context.Context, log logr.Logger, databaseConn
 	}
 
 	for rows.Next() {
-		var name, namespace string
+		var uid, name, namespace string
 
-		err := rows.Scan(&name, &namespace)
+		err := rows.Scan(&uid, &name, &namespace)
 		if err != nil {
 			log.Error(err, "error in select", "table", subscriptionsSpecTableName)
 			continue
 		}
 
-		go handleSubscriptionStatus(ctx, log, databaseConnectionPool, k8sClient, name, namespace)
+		go handleSubscriptionStatus(ctx, log, databaseConnectionPool, k8sClient, uid, name, namespace)
 	}
 }
 
 func handleSubscriptionStatus(ctx context.Context, log logr.Logger, databaseConnectionPool *pgxpool.Pool,
-	k8sClient client.Client, subscriptionName string, subscriptionNamespace string) {
+	k8sClient client.Client, specSubscriptionUID string, subscriptionName string, subscriptionNamespace string) {
 	log.Info("handling a subscription", "name", subscriptionName, "namespace", subscriptionNamespace)
 
 	subscriptionStatus, err := getAggregatedSubscriptionStatuses(ctx, databaseConnectionPool, subscriptionName,
@@ -79,14 +74,11 @@ func handleSubscriptionStatus(ctx context.Context, log logr.Logger, databaseConn
 	}
 
 	if subscriptionStatus == nil { // no status resources found in DB
-		if err := cleanK8sResource(ctx, k8sClient, &appsv1alpha1.SubscriptionStatus{}, subscriptionName,
-			subscriptionNamespace); err != nil {
-			log.Error(err, "failed to clean subscription-status", "name", subscriptionName,
-				"namespace", subscriptionNamespace)
-		}
-
 		return
 	}
+
+	// set owner-reference so that the subscription-status is deleted when the subscription is
+	setOwnerReference(subscriptionStatus, createSubscriptionOwnerReference(subscriptionName, specSubscriptionUID))
 
 	if err := updateSubscriptionStatus(ctx, k8sClient, subscriptionStatus); err != nil {
 		log.Error(err, "failed to update subscription-status status")

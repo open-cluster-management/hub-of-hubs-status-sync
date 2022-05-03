@@ -4,12 +4,16 @@ import (
 	"context"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/api/errors"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
-	hubOfHubsStatusResourceAnnotation = "hub-of-hubs.open-cluster-management.io/hubOfHubsStatusResource"
+	appsv1APIGroup          = "apps.open-cluster-management.io/v1"
+	clustersv1beta1APIGroup = "cluster.open-cluster-management.io/v1beta1"
+	placementKind           = "Placement"
+	subscriptionKind        = "Subscription"
 )
 
 func createK8sResource(ctx context.Context, k8sClient client.Client, resource client.Object) error {
@@ -36,27 +40,33 @@ func createK8sResource(ctx context.Context, k8sClient client.Client, resource cl
 	return nil
 }
 
-func cleanK8sResource(ctx context.Context, k8sClient client.Client, resourceHolder client.Object, resourceName string,
-	resourceNamespace string) error {
-	err := k8sClient.Get(ctx, client.ObjectKey{
-		Name:      resourceName,
-		Namespace: resourceNamespace,
-	},
-		resourceHolder)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil
-		}
+func setOwnerReference(resource client.Object, ownerReference *v1.OwnerReference) {
+	resource.SetOwnerReferences([]v1.OwnerReference{*ownerReference})
+}
 
-		return fmt.Errorf("failed to get k8s-resource - %w", err)
+func createPlacementOwnerReference(name string, uid string) *v1.OwnerReference {
+	return &v1.OwnerReference{
+		APIVersion:         clustersv1beta1APIGroup,
+		Controller:         newTrue(),
+		BlockOwnerDeletion: newTrue(),
+		Kind:               placementKind,
+		Name:               name,
+		UID:                types.UID(uid),
 	}
+}
 
-	// if resource was created by this controller then it should be deleted
-	if _, found := resourceHolder.GetAnnotations()[hubOfHubsStatusResourceAnnotation]; found {
-		if err := k8sClient.Delete(ctx, resourceHolder); err != nil {
-			return fmt.Errorf("failed to delete k8s-resource - %w", err)
-		}
+func createSubscriptionOwnerReference(name string, uid string) *v1.OwnerReference {
+	return &v1.OwnerReference{
+		APIVersion:         appsv1APIGroup,
+		Controller:         newTrue(),
+		BlockOwnerDeletion: newTrue(),
+		Kind:               subscriptionKind,
+		Name:               name,
+		UID:                types.UID(uid),
 	}
+}
 
-	return nil
+func newTrue() *bool {
+	t := true
+	return &t
 }
