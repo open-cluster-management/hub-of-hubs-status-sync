@@ -79,7 +79,8 @@ func handleSubscriptionReport(ctx context.Context, log logr.Logger, databaseConn
 	}
 
 	// set owner-reference so that the subscription-report is deleted when the subscription is
-	setOwnerReference(subscriptionReport, createSubscriptionOwnerReference(subscriptionName, specSubscriptionUID))
+	setOwnerReference(subscriptionReport, createOwnerReference(appsv1APIGroup, subscriptionKind, subscriptionName,
+		specSubscriptionUID))
 
 	if err := updateSubscriptionReport(ctx, k8sClient, subscriptionReport); err != nil {
 		log.Error(err, "failed to update subscription-report status")
@@ -110,9 +111,8 @@ func getAggregatedSubscriptionReport(ctx context.Context, databaseConnectionPool
 
 		// if not updated yet, clone a report from DB and clean it
 		if subscriptionReport == nil {
-			subscriptionReport = leafHubSubscriptionReport.DeepCopy()
-			updateSubscriptionReportObject(subscriptionReport, appsv1alpha1.SubscriptionReportSummary{},
-				[]*appsv1alpha1.SubscriptionReportResult{})
+			subscriptionReport = cleanSubscriptionReportObject(leafHubSubscriptionReport)
+			continue
 		}
 
 		// update aggregated summary
@@ -149,8 +149,8 @@ func updateSubscriptionReport(ctx context.Context, k8sClient client.Client,
 	// if object exists, clone and update
 	originalSubscriptionReport := deployedSubscriptionReport.DeepCopy()
 
-	updateSubscriptionReportObject(deployedSubscriptionReport, aggregatedSubscriptionReport.Summary,
-		aggregatedSubscriptionReport.Results)
+	deployedSubscriptionReport.Summary = aggregatedSubscriptionReport.Summary
+	deployedSubscriptionReport.Results = aggregatedSubscriptionReport.Results
 
 	err = k8sClient.Patch(ctx, deployedSubscriptionReport, client.MergeFrom(originalSubscriptionReport))
 	if err != nil {
@@ -174,18 +174,17 @@ func updateSubscriptionReportSummary(aggregatedSummary *appsv1alpha1.Subscriptio
 	aggregatedSummary.Clusters = add(aggregatedSummary.Clusters, reportSummary.Clusters)
 }
 
-func updateSubscriptionReportObject(subscriptionReport *appsv1alpha1.SubscriptionReport,
-	updatedSummary appsv1alpha1.SubscriptionReportSummary, updatedResults []*appsv1alpha1.SubscriptionReportResult) {
+func cleanSubscriptionReportObject(subscriptionReport appsv1alpha1.SubscriptionReport,
+) *appsv1alpha1.SubscriptionReport {
+	clone := subscriptionReport.DeepCopy()
 	// assign annotations
-	subscriptionReport.Annotations = map[string]string{}
+	clone.Annotations = map[string]string{}
 	// assign labels
-	subscriptionReport.Labels = map[string]string{}
-	subscriptionReport.Labels[appsv1.AnnotationHosting] = fmt.Sprintf("%s.%s",
+	clone.Labels = map[string]string{}
+	clone.Labels[appsv1.AnnotationHosting] = fmt.Sprintf("%s.%s",
 		subscriptionReport.Namespace, subscriptionReport.Name)
-	// reset report summary
-	subscriptionReport.Summary = updatedSummary
-	// reset results
-	subscriptionReport.Results = updatedResults
+
+	return clone
 }
 
 func add(number1 string, number2 string) string {

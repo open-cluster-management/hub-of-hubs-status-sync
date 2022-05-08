@@ -78,7 +78,8 @@ func handleSubscriptionStatus(ctx context.Context, log logr.Logger, databaseConn
 	}
 
 	// set owner-reference so that the subscription-status is deleted when the subscription is
-	setOwnerReference(subscriptionStatus, createSubscriptionOwnerReference(subscriptionName, specSubscriptionUID))
+	setOwnerReference(subscriptionStatus, createOwnerReference(appsv1APIGroup, subscriptionKind, subscriptionName,
+		specSubscriptionUID))
 
 	if err := updateSubscriptionStatus(ctx, k8sClient, subscriptionStatus); err != nil {
 		log.Error(err, "failed to update subscription-status status")
@@ -108,8 +109,8 @@ func getAggregatedSubscriptionStatuses(ctx context.Context, databaseConnectionPo
 		}
 
 		if subscriptionStatus == nil {
-			subscriptionStatus = leafHubSubscriptionStatus.DeepCopy()
-			updateSubscriptionStatusObject(subscriptionStatus, appsv1alpha1.SubscriptionClusterStatusMap{})
+			subscriptionStatus = cleanSubscriptionStatusObject(leafHubSubscriptionStatus)
+			continue
 		}
 
 		// assuming that cluster names are unique across the hubs, all we need to do is a complete merge
@@ -145,7 +146,7 @@ func updateSubscriptionStatus(ctx context.Context, k8sClient client.Client,
 	// if object exists, clone and update
 	originalSubscriptionStatus := deployedSubscriptionStatus.DeepCopy()
 
-	updateSubscriptionStatusObject(deployedSubscriptionStatus, aggregatedSubscriptionStatus.Statuses)
+	deployedSubscriptionStatus.Statuses = aggregatedSubscriptionStatus.Statuses
 
 	err = k8sClient.Patch(ctx, deployedSubscriptionStatus, client.MergeFrom(originalSubscriptionStatus))
 	if err != nil && !errors.IsNotFound(err) {
@@ -156,14 +157,15 @@ func updateSubscriptionStatus(ctx context.Context, k8sClient client.Client,
 	return nil
 }
 
-func updateSubscriptionStatusObject(subscriptionStatus *appsv1alpha1.SubscriptionStatus,
-	statuses appsv1alpha1.SubscriptionClusterStatusMap) {
+func cleanSubscriptionStatusObject(subscriptionStatus appsv1alpha1.SubscriptionStatus,
+) *appsv1alpha1.SubscriptionStatus {
+	clone := subscriptionStatus.DeepCopy()
 	// assign annotations
-	subscriptionStatus.Annotations = map[string]string{}
+	clone.Annotations = map[string]string{}
 	// assign labels
-	subscriptionStatus.Labels = map[string]string{}
-	subscriptionStatus.Labels[appsv1.AnnotationHosting] = fmt.Sprintf("%s.%s",
+	clone.Labels = map[string]string{}
+	clone.Labels[appsv1.AnnotationHosting] = fmt.Sprintf("%s.%s",
 		subscriptionStatus.Namespace, subscriptionStatus.Name)
-	// reset statuses
-	subscriptionStatus.Statuses = statuses
+
+	return clone
 }

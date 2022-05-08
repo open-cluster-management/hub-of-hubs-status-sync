@@ -77,7 +77,8 @@ func handlePlacementDecision(ctx context.Context, log logr.Logger, databaseConne
 	}
 
 	// set owner-reference so that the placement-decision is deleted when the placement is
-	setOwnerReference(placementDecision, createPlacementOwnerReference(placementName, specPlacementUID))
+	setOwnerReference(placementDecision, createOwnerReference(clustersv1beta1APIGroup, placementKind, placementName,
+		specPlacementUID))
 
 	if err := updatePlacementDecision(ctx, k8sClient, placementDecision); err != nil {
 		log.Error(err, "failed to update placement-decision")

@@ -9,13 +9,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	appsv1APIGroup          = "apps.open-cluster-management.io/v1"
-	clustersv1beta1APIGroup = "cluster.open-cluster-management.io/v1beta1"
-	placementKind           = "Placement"
-	subscriptionKind        = "Subscription"
-)
-
 func createK8sResource(ctx context.Context, k8sClient client.Client, resource client.Object) error {
 	if resource == nil {
 		return nil
@@ -35,23 +28,12 @@ func setOwnerReference(resource client.Object, ownerReference *v1.OwnerReference
 	resource.SetOwnerReferences([]v1.OwnerReference{*ownerReference})
 }
 
-func createPlacementOwnerReference(name string, uid string) *v1.OwnerReference {
+func createOwnerReference(apiVersion string, kind string, name string, uid string) *v1.OwnerReference {
 	return &v1.OwnerReference{
-		APIVersion:         clustersv1beta1APIGroup,
+		APIVersion:         apiVersion,
 		Controller:         newTrue(),
 		BlockOwnerDeletion: newTrue(),
-		Kind:               placementKind,
-		Name:               name,
-		UID:                types.UID(uid),
-	}
-}
-
-func createSubscriptionOwnerReference(name string, uid string) *v1.OwnerReference {
-	return &v1.OwnerReference{
-		APIVersion:         appsv1APIGroup,
-		Controller:         newTrue(),
-		BlockOwnerDeletion: newTrue(),
-		Kind:               subscriptionKind,
+		Kind:               kind,
 		Name:               name,
 		UID:                types.UID(uid),
 	}
