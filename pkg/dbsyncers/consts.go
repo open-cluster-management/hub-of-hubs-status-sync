@@ -1,6 +1,6 @@
 package dbsyncers
 
-// API Info
+// API Info.
 const (
 	appsv1APIGroup          = "apps.open-cluster-management.io/v1"
 	clustersv1beta1APIGroup = "cluster.open-cluster-management.io/v1beta1"
@@ -8,7 +8,7 @@ const (
 	subscriptionKind        = "Subscription"
 )
 
-// DB Tables
+// DB Tables.
 const (
 	placementsSpecTableName   = "placements"
 	placementsStatusTableName = "placements"
