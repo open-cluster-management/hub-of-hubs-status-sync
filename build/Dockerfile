@@ -1,7 +1,27 @@
-# Stage 1: Use image builder to build the target binaries
+# Stage 0: Install golang binaries on the base image
 # Copyright Contributors to the Open Cluster Management project
 
-FROM golang:1.16 AS builder
+FROM registry.access.redhat.com/ubi8/ubi-minimal:latest AS go-env
+
+# gcc for C
+RUN microdnf install -y gcc make && rm -rf /var/lib/apt/lists/*
+# tar and gzip for unpacking golang
+RUN microdnf install tar gzip
+#install golang binaries
+ENV GOLANG_VERSION 1.17.5
+ENV GOLANG_DOWNLOAD_URL https://golang.org/dl/go$GOLANG_VERSION.linux-amd64.tar.gz
+
+RUN curl -fsSL "$GOLANG_DOWNLOAD_URL" -o golang.tar.gz \
+    && tar -C /usr/local -xzf golang.tar.gz \
+    && rm golang.tar.gz
+
+RUN microdnf clean all
+
+#add to PATH variable
+ENV PATH /usr/local/go/bin:$PATH
+
+# Stage 1: Use image builder to build the target binaries
+FROM go-env AS builder
 
 ARG COMPONENT
 WORKDIR /workspace/${COMPONENT}

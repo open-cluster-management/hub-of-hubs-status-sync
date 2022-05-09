@@ -56,8 +56,6 @@ func syncPolicies(ctx context.Context, log logr.Logger, databaseConnectionPool *
 		return
 	}
 
-	defer rows.Close()
-
 	for rows.Next() {
 		var id, name, namespace string
 
@@ -106,6 +104,8 @@ func getComplianceStatus(ctx context.Context, databaseConnectionPool *pgxpool.Po
 		return []*policiesv1.CompliancePerClusterStatus{}, false,
 			fmt.Errorf("error in getting policy compliance statuses from DB - %w", err)
 	}
+
+	defer rows.Close()
 
 	var compliancePerClusterStatuses []*policiesv1.CompliancePerClusterStatus
 
