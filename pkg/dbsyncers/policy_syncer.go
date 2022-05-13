@@ -8,10 +8,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v4/pgxpool"
 	policiesv1 "github.com/open-cluster-management/governance-policy-propagator/api/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
+	placementrulesv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/placementrule/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -24,12 +25,13 @@ const (
 	complianceStatusTableName = "compliance"
 )
 
+var log = ctrl.Log.WithName("policies-db-syncer")
+
 func addPolicyDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool, syncInterval time.Duration) error {
 	err := mgr.Add(&genericDBSyncer{
 		syncInterval: syncInterval,
 		syncFunc: func(ctx context.Context) {
 			syncPolicies(ctx,
-				ctrl.Log.WithName("policies-db-syncer"),
 				databaseConnectionPool, mgr.GetClient(),
 				map[string]policiesv1.ComplianceState{
 					dbEnumCompliant:    policiesv1.Compliant,
@@ -44,7 +46,7 @@ func addPolicyDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool, s
 	return nil
 }
 
-func syncPolicies(ctx context.Context, log logr.Logger, databaseConnectionPool *pgxpool.Pool, k8sClient client.Client,
+func syncPolicies(ctx context.Context, databaseConnectionPool *pgxpool.Pool, k8sClient client.Client,
 	dbEnumToPolicyComplianceStateMap map[string]policiesv1.ComplianceState) {
 	log.Info("performing sync of policies status")
 
@@ -73,12 +75,12 @@ func syncPolicies(ctx context.Context, log logr.Logger, databaseConnectionPool *
 			continue
 		}
 
-		go handlePolicy(ctx, log, databaseConnectionPool, k8sClient, dbEnumToPolicyComplianceStateMap, instance)
+		go handlePolicy(ctx, databaseConnectionPool, k8sClient, dbEnumToPolicyComplianceStateMap, instance)
 	}
 }
 
-func handlePolicy(ctx context.Context, log logr.Logger, databaseConnectionPool *pgxpool.Pool,
-	k8sClient client.StatusClient, dbEnumToPolicyComplianceStateMap map[string]policiesv1.ComplianceState,
+func handlePolicy(ctx context.Context, databaseConnectionPool *pgxpool.Pool,
+	k8sClient client.Client, dbEnumToPolicyComplianceStateMap map[string]policiesv1.ComplianceState,
 	policy *policiesv1.Policy) {
 	compliancePerClusterStatuses, hasNonCompliantClusters, err := getComplianceStatus(ctx, databaseConnectionPool,
 		dbEnumToPolicyComplianceStateMap, policy)
@@ -87,7 +89,7 @@ func handlePolicy(ctx context.Context, log logr.Logger, databaseConnectionPool *
 		return
 	}
 
-	if err = updateComplianceStatus(ctx, k8sClient, policy, compliancePerClusterStatuses,
+	if err = updatePoliceStatus(ctx, k8sClient, policy, compliancePerClusterStatuses,
 		hasNonCompliantClusters); err != nil {
 		log.Error(err, "failed to update policy status")
 	}
@@ -135,7 +137,7 @@ func getComplianceStatus(ctx context.Context, databaseConnectionPool *pgxpool.Po
 	return compliancePerClusterStatuses, hasNonCompliantClusters, nil
 }
 
-func updateComplianceStatus(ctx context.Context, k8sClient client.StatusClient, policy *policiesv1.Policy,
+func updatePoliceStatus(ctx context.Context, k8sClient client.Client, policy *policiesv1.Policy,
 	compliancePerClusterStatuses []*policiesv1.CompliancePerClusterStatus,
 	hasNonCompliantClusters bool) error {
 	originalPolicy := policy.DeepCopy()
@@ -149,10 +151,87 @@ func updateComplianceStatus(ctx context.Context, k8sClient client.StatusClient, 
 		policy.Status.ComplianceState = policiesv1.Compliant
 	}
 
-	err := k8sClient.Status().Patch(ctx, policy, client.MergeFrom(originalPolicy))
+	placements, err := getPlacements(k8sClient, policy)
+	if err != nil {
+		return err
+	}
+	policy.Status.Placement = placements
+
+	err = k8sClient.Status().Patch(ctx, policy, client.MergeFrom(originalPolicy))
 	if err != nil && !errors.IsNotFound(err) {
 		return fmt.Errorf("failed to update policy CR: %w", err)
 	}
 
 	return nil
+}
+
+func getPlacements(k8sClient client.Client, instance *policiesv1.Policy) ([]*policiesv1.Placement, error) {
+	log.Info("get the placements for the policy", "policy", instance.GetName())
+	pbList, err := getPlacementBindingList(k8sClient, instance)
+	if err != nil {
+		return nil, err
+	}
+	var placements []*policiesv1.Placement
+	for _, pb := range pbList.Items {
+		subjects := pb.Subjects
+		for _, subject := range subjects {
+			if !(subject.APIGroup == policiesv1.SchemeGroupVersion.Group &&
+				subject.Kind == policiesv1.Kind &&
+				subject.Name == instance.GetName()) {
+				continue
+			}
+			p, err := getPlacementsPerBinding(k8sClient, pb, instance)
+			if err != nil {
+				return nil, err
+			}
+			placements = append(placements, p...)
+		}
+
+	}
+	return placements, nil
+}
+
+func getPlacementBindingList(k8sClient client.Client, instance *policiesv1.Policy) (*policiesv1.PlacementBindingList, error) {
+	// Get the placement binding in order to later get the placements
+	pbList := &policiesv1.PlacementBindingList{}
+
+	err := k8sClient.List(context.TODO(), pbList, &client.ListOptions{Namespace: instance.GetNamespace()})
+	if err != nil {
+		log.Error(err, "failed to list placementbindings")
+		return nil, err
+	}
+	return pbList, nil
+}
+
+// getPlacementsPerBinding returns the placements for the policy per placementbinding
+func getPlacementsPerBinding(k8sClient client.Client, pb policiesv1.PlacementBinding,
+	instance *policiesv1.Policy) ([]*policiesv1.Placement, error) {
+	plr := &placementrulesv1.PlacementRule{}
+
+	err := k8sClient.Get(context.TODO(), types.NamespacedName{
+		Namespace: instance.GetNamespace(),
+		Name:      pb.PlacementRef.Name,
+	}, plr)
+	// no error when not found
+	if err != nil && !errors.IsNotFound(err) {
+		return nil, fmt.Errorf("failed to get placementrule: %w", err)
+	}
+
+	var placements []*policiesv1.Placement
+
+	plcPlacementAdded := false
+
+	for _, subject := range pb.Subjects {
+		if subject.Kind == policiesv1.Kind && subject.Name == instance.GetName() && !plcPlacementAdded {
+			placement := &policiesv1.Placement{
+				PlacementBinding: pb.GetName(),
+				PlacementRule:    plr.GetName(),
+			}
+			placements = append(placements, placement)
+			// should only add policy placement once in case placement binding subjects contains duplicated policies
+			plcPlacementAdded = true
+		}
+	}
+
+	return placements, nil
 }

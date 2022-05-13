@@ -59,6 +59,7 @@ rules:
 - apiGroups:
   - "policy.open-cluster-management.io"
   resources:
+  - placementbindings
   - policies
   - policies/status
   verbs:
