@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v4/pgxpool"
 	policiesv1 "github.com/open-cluster-management/governance-policy-propagator/api/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -25,13 +26,12 @@ const (
 	complianceStatusTableName = "compliance"
 )
 
-var log = ctrl.Log.WithName("policies-db-syncer")
-
 func addPolicyDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool, syncInterval time.Duration) error {
 	err := mgr.Add(&genericDBSyncer{
 		syncInterval: syncInterval,
 		syncFunc: func(ctx context.Context) {
 			syncPolicies(ctx,
+				ctrl.Log.WithName("policies-db-syncer"),
 				databaseConnectionPool, mgr.GetClient(),
 				map[string]policiesv1.ComplianceState{
 					dbEnumCompliant:    policiesv1.Compliant,
@@ -46,7 +46,7 @@ func addPolicyDBSyncer(mgr ctrl.Manager, databaseConnectionPool *pgxpool.Pool, s
 	return nil
 }
 
-func syncPolicies(ctx context.Context, databaseConnectionPool *pgxpool.Pool, k8sClient client.Client,
+func syncPolicies(ctx context.Context, log logr.Logger, databaseConnectionPool *pgxpool.Pool, k8sClient client.Client,
 	dbEnumToPolicyComplianceStateMap map[string]policiesv1.ComplianceState) {
 	log.Info("performing sync of policies status")
 
@@ -75,28 +75,28 @@ func syncPolicies(ctx context.Context, databaseConnectionPool *pgxpool.Pool, k8s
 			continue
 		}
 
-		go handlePolicy(ctx, databaseConnectionPool, k8sClient, dbEnumToPolicyComplianceStateMap, instance)
+		go handlePolicy(ctx, log, databaseConnectionPool, k8sClient, dbEnumToPolicyComplianceStateMap, instance)
 	}
 }
 
-func handlePolicy(ctx context.Context, databaseConnectionPool *pgxpool.Pool,
+func handlePolicy(ctx context.Context, log logr.Logger, databaseConnectionPool *pgxpool.Pool,
 	k8sClient client.Client, dbEnumToPolicyComplianceStateMap map[string]policiesv1.ComplianceState,
 	policy *policiesv1.Policy) {
-	compliancePerClusterStatuses, hasNonCompliantClusters, err := getComplianceStatus(ctx, databaseConnectionPool,
+	compliancePerClusterStatuses, hasNonCompliantClusters, err := getComplianceStatus(ctx, log, databaseConnectionPool,
 		dbEnumToPolicyComplianceStateMap, policy)
 	if err != nil {
 		log.Error(err, "failed to get compliance status of a policy", "uid", policy.GetUID())
 		return
 	}
 
-	if err = updatePoliceStatus(ctx, k8sClient, policy, compliancePerClusterStatuses,
+	if err = updatePoliceStatus(ctx, log, k8sClient, policy, compliancePerClusterStatuses,
 		hasNonCompliantClusters); err != nil {
 		log.Error(err, "failed to update policy status")
 	}
 }
 
 // returns array of CompliancePerClusterStatus, whether the policy has any NonCompliant cluster, and error.
-func getComplianceStatus(ctx context.Context, databaseConnectionPool *pgxpool.Pool,
+func getComplianceStatus(ctx context.Context, log logr.Logger, databaseConnectionPool *pgxpool.Pool,
 	dbEnumToPolicyComplianceStateMap map[string]policiesv1.ComplianceState,
 	policy *policiesv1.Policy) ([]*policiesv1.CompliancePerClusterStatus, bool, error) {
 	rows, err := databaseConnectionPool.Query(ctx,
@@ -137,7 +137,7 @@ func getComplianceStatus(ctx context.Context, databaseConnectionPool *pgxpool.Po
 	return compliancePerClusterStatuses, hasNonCompliantClusters, nil
 }
 
-func updatePoliceStatus(ctx context.Context, k8sClient client.Client, policy *policiesv1.Policy,
+func updatePoliceStatus(ctx context.Context, log logr.Logger, k8sClient client.Client, policy *policiesv1.Policy,
 	compliancePerClusterStatuses []*policiesv1.CompliancePerClusterStatus,
 	hasNonCompliantClusters bool) error {
 	originalPolicy := policy.DeepCopy()
@@ -151,7 +151,7 @@ func updatePoliceStatus(ctx context.Context, k8sClient client.Client, policy *po
 		policy.Status.ComplianceState = policiesv1.Compliant
 	}
 
-	placements, err := getPlacements(k8sClient, policy)
+	placements, err := getPlacements(ctx, log, k8sClient, policy)
 	if err != nil {
 		return err
 	}
@@ -165,71 +165,71 @@ func updatePoliceStatus(ctx context.Context, k8sClient client.Client, policy *po
 	return nil
 }
 
-func getPlacements(k8sClient client.Client, instance *policiesv1.Policy) ([]*policiesv1.Placement, error) {
+func getPlacements(ctx context.Context, log logr.Logger, k8sClient client.Client,
+	instance *policiesv1.Policy) ([]*policiesv1.Placement, error) {
 	log.Info("get the placements for the policy", "policy", instance.GetName())
-	pbList, err := getPlacementBindingList(k8sClient, instance)
+	placementBindingList, err := getPlacementBindingList(ctx, log, k8sClient, instance)
 	if err != nil {
 		return nil, err
 	}
 	var placements []*policiesv1.Placement
-	for _, pb := range pbList.Items {
-		subjects := pb.Subjects
+	for _, placementBinding := range placementBindingList.Items {
+		subjects := placementBinding.Subjects
 		for _, subject := range subjects {
 			if !(subject.APIGroup == policiesv1.SchemeGroupVersion.Group &&
 				subject.Kind == policiesv1.Kind &&
 				subject.Name == instance.GetName()) {
 				continue
 			}
-			p, err := getPlacementsPerBinding(k8sClient, pb, instance)
+			placement, err := getPlacementsPerBinding(ctx, k8sClient, placementBinding, instance)
 			if err != nil {
 				return nil, err
 			}
-			placements = append(placements, p...)
+			placements = append(placements, placement...)
 		}
 
 	}
 	return placements, nil
 }
 
-func getPlacementBindingList(k8sClient client.Client, instance *policiesv1.Policy) (*policiesv1.PlacementBindingList, error) {
+func getPlacementBindingList(ctx context.Context, log logr.Logger, k8sClient client.Client,
+	instance *policiesv1.Policy) (*policiesv1.PlacementBindingList, error) {
 	// Get the placement binding in order to later get the placements
-	pbList := &policiesv1.PlacementBindingList{}
+	placementBindingList := &policiesv1.PlacementBindingList{}
 
-	err := k8sClient.List(context.TODO(), pbList, &client.ListOptions{Namespace: instance.GetNamespace()})
+	err := k8sClient.List(ctx, placementBindingList, &client.ListOptions{Namespace: instance.GetNamespace()})
 	if err != nil {
 		log.Error(err, "failed to list placementbindings")
 		return nil, err
 	}
-	return pbList, nil
+	return placementBindingList, nil
 }
 
 // getPlacementsPerBinding returns the placements for the policy per placementbinding
-func getPlacementsPerBinding(k8sClient client.Client, pb policiesv1.PlacementBinding,
-	instance *policiesv1.Policy) ([]*policiesv1.Placement, error) {
-	plr := &placementrulesv1.PlacementRule{}
+func getPlacementsPerBinding(ctx context.Context, k8sClient client.Client,
+	placementBinding policiesv1.PlacementBinding, instance *policiesv1.Policy) ([]*policiesv1.Placement, error) {
 
-	err := k8sClient.Get(context.TODO(), types.NamespacedName{
+	placementrule := &placementrulesv1.PlacementRule{}
+	err := k8sClient.Get(ctx, types.NamespacedName{
 		Namespace: instance.GetNamespace(),
-		Name:      pb.PlacementRef.Name,
-	}, plr)
+		Name:      placementBinding.PlacementRef.Name,
+	}, placementrule)
+
 	// no error when not found
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil {
 		return nil, fmt.Errorf("failed to get placementrule: %w", err)
 	}
 
 	var placements []*policiesv1.Placement
 
-	plcPlacementAdded := false
-
-	for _, subject := range pb.Subjects {
-		if subject.Kind == policiesv1.Kind && subject.Name == instance.GetName() && !plcPlacementAdded {
+	for _, subject := range placementBinding.Subjects {
+		if subject.Kind == policiesv1.Kind && subject.Name == instance.GetName() {
 			placement := &policiesv1.Placement{
-				PlacementBinding: pb.GetName(),
-				PlacementRule:    plr.GetName(),
+				PlacementBinding: placementBinding.GetName(),
+				PlacementRule:    placementrule.GetName(),
 			}
 			placements = append(placements, placement)
-			// should only add policy placement once in case placement binding subjects contains duplicated policies
-			plcPlacementAdded = true
+			break
 		}
 	}
 
